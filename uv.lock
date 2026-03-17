@@ -47,12 +47,16 @@ wheels = [
 [[package]]
 name = "arclith"
 version = "0.1.0"
-source = { editable = "../framework" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "loguru" },
     { name = "pydantic" },
     { name = "pyyaml" },
     { name = "uuid6" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/2b/75/00b0c3ccab2c6c4ea1b7feada879f7bab426c66cbd8be010429e2fcd5743/arclith-0.1.0.tar.gz", hash = "sha256:639c1aee79623afbdc4cbf0281290adb17c78ae80648e12cf5d44e03717e3f7f", size = 69598, upload-time = "2026-03-16T22:03:23.281Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/36/af/80da88aeb3aaa534fc35220fbd8bddc79169dc5b28bec1e02894161dc484/arclith-0.1.0-py3-none-any.whl", hash = "sha256:480bd603ee0e1b344c114e83379007b59a933ba61005fa8297840cfa0690e42f", size = 32075, upload-time = "2026-03-16T22:03:21.914Z" },
 ]
 
 [package.optional-dependencies]
@@ -66,25 +70,6 @@ mcp = [
 mongodb = [
     { name = "motor" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "duckdb", marker = "extra == 'all'", specifier = "==1.5.0" },
-    { name = "duckdb", marker = "extra == 'duckdb'", specifier = "==1.5.0" },
-    { name = "fastapi", marker = "extra == 'all'", specifier = "==0.135.1" },
-    { name = "fastapi", marker = "extra == 'fastapi'", specifier = "==0.135.1" },
-    { name = "fastmcp", marker = "extra == 'all'", specifier = "==3.1.0" },
-    { name = "fastmcp", marker = "extra == 'mcp'", specifier = "==3.1.0" },
-    { name = "loguru", specifier = "==0.7.3" },
-    { name = "motor", marker = "extra == 'all'", specifier = "==3.7.1" },
-    { name = "motor", marker = "extra == 'mongodb'", specifier = "==3.7.1" },
-    { name = "pydantic", specifier = "==2.12.5" },
-    { name = "pyyaml", specifier = "==6.0.3" },
-    { name = "uuid6", specifier = "==2025.0.1" },
-    { name = "uvicorn", marker = "extra == 'all'", specifier = "==0.41.0" },
-    { name = "uvicorn", marker = "extra == 'fastapi'", specifier = "==0.41.0" },
-]
-provides-extras = ["mongodb", "duckdb", "fastapi", "mcp", "all"]
 
 [[package]]
 name = "attrs"
@@ -982,7 +967,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "arclith", extras = ["mongodb", "fastapi", "mcp"], editable = "../framework" }]
+requires-dist = [{ name = "arclith", extras = ["mongodb", "fastapi", "mcp"], specifier = ">=0.1.0" }]
 
 [[package]]
 name = "rich"

@@ -13,4 +13,3 @@ class DuckDBIngredientRepository(DuckDBRepository[Ingredient], IngredientReposit
             [f"%{name.lower()}%"],
         )
         return [self._row_to_entity(r) for r in rows]
-

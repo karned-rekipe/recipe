@@ -11,9 +11,6 @@ dependencies = [
     "arclith[mongodb,fastapi,mcp]>=0.1.0",
 ]
 
-[tool.uv.sources]
-arclith = { path = "../framework", editable = true }
-
 [tool.hatch.build.targets.wheel]
 packages = [
     "domain",
