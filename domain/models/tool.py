@@ -1,14 +1,18 @@
-from dataclasses import dataclass
-
 from arclith import Entity
+from pydantic import Field, field_validator
 
 
-@dataclass
 class Tool(Entity):
-    name: str = ""
+    name: str = Field(
+        ...,
+        description="Nom de l'outil.",
+        examples=["Pizza maker", "Salad maker"]
+    )
 
-    def __post_init__(self) -> None:
-        normalized_name = self.name.strip()
-        if not normalized_name:
-            raise ValueError("Tool name cannot be empty")
-        self.name = normalized_name
+    @field_validator("name", mode="before")
+    @classmethod
+    def strip_name(cls, v: str) -> str:
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("Ingredient name cannot be empty")
+        return stripped

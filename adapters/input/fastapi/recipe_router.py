@@ -4,7 +4,7 @@ from uuid6 import UUID
 from uuid import UUID as StdUUID
 
 from adapters.input.fastapi.dependencies import inject_tenant_uri
-from adapters.input.schemas.recipe_schema import RecipeSchema, RecipeCreateSchema
+from adapters.input.schemas.recipe_schema import RecipeSchema, RecipeCreateSchema, RecipeCreatedSchema
 from application.services.recipe_service import RecipeService
 from domain.models.recipe import Recipe
 
@@ -22,7 +22,7 @@ class RecipeRouter:
 
 
     def _register_routes(self) -> None:
-        self.router.add_api_route("/", self.create_recipe, methods=["POST"], response_model=RecipeSchema, status_code=201)
+        self.router.add_api_route("/", self.create_recipe, methods=["POST"], response_model=RecipeCreatedSchema, status_code=201)
         self.router.add_api_route("/", self.list_recipes, methods=["GET"], response_model=list[RecipeSchema], status_code=200)
         self.router.add_api_route("/{name}", self.find_recipes_by_name, methods=["GET"], response_model=list[RecipeSchema], status_code=200)
         self.router.add_api_route("/purge", self.purge_recipes, methods=["DELETE"], response_model=dict, status_code=200)
@@ -38,11 +38,11 @@ class RecipeRouter:
         return UUID(str(uuid))
 
 
-    async def create_recipe(self, payload: RecipeCreateSchema) -> RecipeSchema:
+    async def create_recipe(self, payload: RecipeCreateSchema) -> RecipeCreatedSchema:
         """Create a new recipe."""
         result = await self._service.create(Recipe(name=payload.name))
 
-        return RecipeSchema.model_validate(result)
+        return RecipeCreatedSchema(uuid=result.uuid)
 
 
     async def get_recipe(self, uuid: StdUUID) -> RecipeSchema:

@@ -1,25 +1,43 @@
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import Field, BaseModel
+from uuid import UUID as StdUUID
 
 from arclith.adapters.input.schemas.base_schema import BaseSchema
 
 
 class RecipeCreateSchema(BaseModel):
-    name: str
-    description: Optional[str] = None
+    name: str = Field(
+        ...,
+        description="Nom de la recette.",
+        examples=["Pizza", "Salade"])
+    description: str | None = Field(
+        None,
+        description="Description détaillée de la recette. None si non applicable.",
+        examples=["Recette de pizza", "Recette de salade"])
 
 
-class RecipePatchSchema(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
+class RecipePatchSchema(RecipeCreateSchema):
+    name: str | None = Field(
+        None,
+        description="Nom de la recette.",
+        examples=["Pizza", "Salade"])
 
 
-class RecipeUpdateSchema(BaseModel):
-    name: str
-    description: Optional[str] = None
+class RecipeUpdateSchema(RecipeCreateSchema):
+    pass
+
+class RecipeCreatedSchema(BaseModel):
+    uuid: StdUUID = Field(
+        description="UUID de la recette créée.",
+        examples=["123e4567-e89b-12d3-a456-426614174000"])
 
 
 class RecipeSchema(BaseSchema):
-    name: str
-    description: Optional[str] = None
+    name: str = Field(
+        ...,
+        description="Nom de la recette.",
+        examples=["Pizza", "Salade"])
+    description: str | None = Field(
+        None,
+        description="Description détaillée de la recette. None si non applicable.",
+        examples=["Recette de pizza", "Recette de salade"])
 

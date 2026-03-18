@@ -4,7 +4,7 @@ from uuid6 import UUID
 from uuid import UUID as StdUUID
 
 from adapters.input.fastapi.dependencies import inject_tenant_uri
-from adapters.input.schemas.tool_schema import ToolSchema, ToolCreateSchema
+from adapters.input.schemas.tool_schema import ToolSchema, ToolCreateSchema, ToolCreatedSchema
 from application.services.tool_service import ToolService
 from domain.models.tool import Tool
 
@@ -22,7 +22,7 @@ class ToolRouter:
 
 
     def _register_routes(self) -> None:
-        self.router.add_api_route("/", self.create_tool, methods=["POST"], response_model=ToolSchema, status_code=201)
+        self.router.add_api_route("/", self.create_tool, methods=["POST"], response_model=ToolCreatedSchema, status_code=201)
         self.router.add_api_route("/", self.list_tools, methods=["GET"], response_model=list[ToolSchema], status_code=200)
         self.router.add_api_route("/{name}", self.find_tools_by_name, methods=["GET"], response_model=list[ToolSchema], status_code=200)
         self.router.add_api_route("/purge", self.purge_tools, methods=["DELETE"], response_model=dict, status_code=200)
@@ -39,11 +39,11 @@ class ToolRouter:
         return UUID(str(uuid))
 
 
-    async def create_tool(self, payload: ToolCreateSchema) -> ToolSchema:
+    async def create_tool(self, payload: ToolCreateSchema) -> ToolCreatedSchema:
         """Create a new tool."""
         result = await self._service.create(Tool(name=payload.name))
 
-        return ToolSchema.model_validate(result)
+        return ToolCreatedSchema(uuid=result.uuid)
 
 
     async def get_tool(self, uuid: StdUUID) -> ToolSchema:
