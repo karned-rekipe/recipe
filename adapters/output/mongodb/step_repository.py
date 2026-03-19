@@ -1,3 +1,4 @@
+from uuid6 import UUID
 from arclith.adapters.output.mongodb.config import MongoDBConfig
 from arclith.adapters.output.mongodb.repository import MongoDBRepository
 from arclith.domain.ports.logger import Logger
@@ -18,6 +19,15 @@ class MongoDBStepRepository(MongoDBRepository[Step], StepRepository):
                 self._from_doc(doc)
                 async for doc in col.find(
                     {"name": {"$regex": escaped_name, "$options": "i"}, "deleted_at": None}
+                )
+            ]
+
+    async def find_by_recipe(self, recipe_uuid: UUID) -> list[Step]:
+        async with self._collection() as col:
+            return [
+                self._from_doc(doc)
+                async for doc in col.find(
+                    {"recipe_uuid": str(recipe_uuid), "deleted_at": None}
                 )
             ]
 

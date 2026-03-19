@@ -1,8 +1,15 @@
+from uuid6 import UUID
+
 from arclith import Entity
 from pydantic import Field, field_validator
 
 
 class Step(Entity):
+    recipe_uuid: UUID = Field(
+        ...,
+        description="UUID de la recette à laquelle appartient l'étape.",
+        examples=["01951234-5678-7abc-def0-123456789abc"],
+    )
     name: str = Field(
         ...,
         max_length=80,
