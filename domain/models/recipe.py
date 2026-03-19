@@ -1,5 +1,11 @@
+from typing import Literal
+
 from arclith import Entity
 from pydantic import Field, field_validator
+
+from domain.models import Ingredient
+from domain.models.step import Step
+from domain.models.ustensil import Ustensil
 
 
 class Recipe(Entity):
@@ -14,6 +20,15 @@ class Recipe(Entity):
         description="Description détaillée de la recette. None si non applicable.",
         examples=["Recette de pizza", "Recette de salade"]
     )
+
+    ingredients: list[Ingredient] | None = Field(
+        None,
+        description="Liste des ingrédients nécessaires pour la recette. None si non applicable."),
+    ustensils: list[Ustensil] | None = Field(None, description="Liste des ustensiles nécessaires pour la recette.")
+    nutriscore: Literal["A", "B", "C", "D", "E", "F"] | None = Field(
+        None,
+        description="Nutriscore de la recette. None si non applicable.", examples=["A", "B", "C", "D", "E", "F"])
+    steps: list[Step] | None = Field(None, description="Liste des étapes nécessaires pour la recette.")
 
     @field_validator("name", mode="before")
     @classmethod
