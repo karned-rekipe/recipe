@@ -30,21 +30,21 @@ class RecipeMCP:
 
         @self._mcp.tool
         async def create_recipe(
-            name: Annotated[str, Field(description="Nom de l'ingrédient.", examples=["Farine de blé"])],
-            unit: Annotated[str | None, Field(default=None, description="Unité de mesure (ex. g, kg, ml). None si non applicable.", examples=["g", "kg", None])] = None,
+            name: Annotated[str, Field(description="Nom de la recette.", examples=["Pizza Margherita", "Salade niçoise"])],
+            description: Annotated[str | None, Field(default=None, description="Description de la recette.", examples=["Une pizza classique italienne.", None])] = None,
             ctx: fastmcp.Context = None,
         ) -> dict:
             """Create a new recipe."""
             await inject_tenant_uri(ctx)
-            result = await service.create(Recipe(name=name, unit=unit))
+            result = await service.create(Recipe(name=name, description=description))
             return RecipeSchema.model_validate(result).model_dump()
 
         @self._mcp.tool
         async def get_recipe(
-            uuid: Annotated[str, Field(description="UUID de l'ingrédient.", examples=["01951234-5678-7abc-def0-123456789abc"])],
+            uuid: Annotated[str, Field(description="UUID de la recette.", examples=["01951234-5678-7abc-def0-123456789abc"])],
             ctx: fastmcp.Context = None,
         ) -> dict | None:
-            """Get an recipe by its UUID."""
+            """Get a recipe by its UUID."""
             await inject_tenant_uri(ctx)
             result = await service.read(to_uuid6(StdUUID(uuid)))
             if result is None:
@@ -54,28 +54,28 @@ class RecipeMCP:
 
         @self._mcp.tool
         async def update_recipe(
-            uuid: Annotated[str, Field(description="UUID de l'ingrédient à modifier.", examples=["01951234-5678-7abc-def0-123456789abc"])],
-            name: Annotated[str, Field(description="Nouveau nom de l'ingrédient.", examples=["Farine complète"])],
-            unit: Annotated[str | None, Field(default=None, description="Nouvelle unité de mesure.", examples=["g", None])] = None,
+            uuid: Annotated[str, Field(description="UUID de la recette à modifier.", examples=["01951234-5678-7abc-def0-123456789abc"])],
+            name: Annotated[str, Field(description="Nouveau nom de la recette.", examples=["Pizza Margherita"])],
+            description: Annotated[str | None, Field(default=None, description="Nouvelle description.", examples=["Une pizza classique italienne.", None])] = None,
             ctx: fastmcp.Context = None,
         ) -> dict:
             """Update an existing recipe."""
             await inject_tenant_uri(ctx)
-            result = await service.update(Recipe(uuid=to_uuid6(StdUUID(uuid)), name=name, unit=unit))
+            result = await service.update(Recipe(uuid=to_uuid6(StdUUID(uuid)), name=name, description=description))
             return RecipeSchema.model_validate(result).model_dump()
 
         @self._mcp.tool
         async def delete_recipe(
-            uuid: Annotated[str, Field(description="UUID de l'ingrédient à supprimer.", examples=["01951234-5678-7abc-def0-123456789abc"])],
+            uuid: Annotated[str, Field(description="UUID de la recette à supprimer.", examples=["01951234-5678-7abc-def0-123456789abc"])],
             ctx: fastmcp.Context = None,
         ) -> None:
-            """Delete an recipe by its UUID."""
+            """Delete a recipe by its UUID."""
             await inject_tenant_uri(ctx)
             await service.delete(to_uuid6(StdUUID(uuid)))
 
         @self._mcp.tool
         async def list_recipes(
-            name: Annotated[str | None, Field(default=None, description="Filtre par nom (recherche partielle, insensible à la casse).", examples=["farine", None])] = None,
+            name: Annotated[str | None, Field(default=None, description="Filtre par nom (recherche partielle, insensible à la casse).", examples=["pizza", None])] = None,
             ctx: fastmcp.Context = None,
         ) -> list[dict]:
             """List all recipes, optionally filtered by name."""
@@ -85,10 +85,10 @@ class RecipeMCP:
 
         @self._mcp.tool
         async def duplicate_recipe(
-            uuid: Annotated[str, Field(description="UUID de l'ingrédient à dupliquer.", examples=["01951234-5678-7abc-def0-123456789abc"])],
+            uuid: Annotated[str, Field(description="UUID de la recette à dupliquer.", examples=["01951234-5678-7abc-def0-123456789abc"])],
             ctx: fastmcp.Context = None,
         ) -> dict:
-            """Duplicate an recipe, assigning it a new UUID."""
+            """Duplicate a recipe, assigning it a new UUID."""
             await inject_tenant_uri(ctx)
             result = await service.duplicate(to_uuid6(StdUUID(uuid)))
             return RecipeSchema.model_validate(result).model_dump()
@@ -99,4 +99,3 @@ class RecipeMCP:
             await inject_tenant_uri(ctx)
             purged = await service.purge()
             return {"purged": purged}
-

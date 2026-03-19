@@ -1,5 +1,5 @@
 from .ingredient_service import IngredientService
 from .recipe_service import RecipeService
-from .tool_service import ToolService
+from .ustensil_service import UstensilService
 
-__all__ = ["IngredientService", "RecipeService", "ToolService",]
+__all__ = ["IngredientService", "RecipeService", "UstensilService"]
