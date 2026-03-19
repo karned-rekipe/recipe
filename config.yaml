@@ -1,15 +1,14 @@
 adapters:
   logger: console       # choix : console
-  repository: mongodb    # choix : memory  mongodb  duckdb
+  repository: duckdb    # choix : memory  mongodb  duckdb
   multitenant: false    # true = URI résolue par requête (vault via JWT)
 
   mongodb:
     uri: mongodb://localhost:5971  # ignoré si multitenant: true
-    db_name: framework
-    collection_name: ingredients
+    db_name: _sample
 
   duckdb:               # formats : .csv | .parquet | .json | .arrow
-    path: data/ingredients.csv
+    path: data/
 
 api:
   host: 0.0.0.0
@@ -25,3 +24,9 @@ soft_delete:
   # 0 = suppression immédiate (pas de soft delete)
   # null = conservation infinie (jamais supprimé physiquement)
   retention_days: 30
+
+agent:
+  model_name: ministral-3:8b  # modèle chargé dans Ollama — min 7B pour le tool calling
+  base_url: http://localhost:11434/v1  # endpoint OpenAI-compatible d'Ollama
+  api_key: ollama                  # valeur factice, LM Studio n'en exige pas
+

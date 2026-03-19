@@ -30,8 +30,8 @@ class IngredientRouter:
         self.router.add_api_route("/{uuid}", self.get_ingredient, methods=["GET"], response_model=IngredientSchema)
         self.router.add_api_route("/{uuid}", self.update_ingredient, methods=["PUT"], response_model=None, status_code=204)
         self.router.add_api_route("/{uuid}", self.patch_ingredient, methods=["PATCH"], response_model=None, status_code=204)
-        self.router.add_api_route("/{uuid}", self.delete_ingredient, methods=["DELETE"], status_code=204)
-        self.router.add_api_route("/{uuid}/duplicate", self.duplicate_ingredient, methods=["POST"], response_model=IngredientSchema, status_code=201)
+        self.router.add_api_route("/{uuid}", self.delete_ingredient, methods=["DELETE"], response_model=None, status_code=204)
+        self.router.add_api_route("/{uuid}/duplicate", self.duplicate_ingredient, methods=["POST"], response_model=IngredientCreatedSchema, status_code=201)
 
     @staticmethod
     def _to_uuid6(uuid: StdUUID) -> UUID:
@@ -82,12 +82,12 @@ class IngredientRouter:
     ) -> list[IngredientSchema]:
         """List all ingredients, optionally filtered by name."""
         items = await self._service.find_by_name(name) if name else await self._service.find_all()
-        return [IngredientSchema.model_validate(i, from_attributes=True) for i in items]
+        return [IngredientSchema.model_validate(i) for i in items]
 
-    async def duplicate_ingredient(self, uuid: StdUUID) -> IngredientSchema:
+    async def duplicate_ingredient(self, uuid: StdUUID) -> IngredientCreatedSchema:
         """Duplicate an ingredient, assigning it a new UUID."""
         result = await self._service.duplicate(self._to_uuid6(uuid))
-        return IngredientSchema.model_validate(result, from_attributes=True)
+        return IngredientCreatedSchema(uuid=result.uuid)
 
     async def purge_ingredients(self) -> dict:
         """Purge all soft-deleted ingredients that have exceeded the retention period."""
