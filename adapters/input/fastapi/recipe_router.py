@@ -7,6 +7,9 @@ from adapters.input.fastapi.dependencies import inject_tenant_uri
 from adapters.input.schemas.recipe_schema import RecipeSchema, RecipeCreateSchema, RecipeCreatedSchema
 from application.services.recipe_service import RecipeService
 from domain.models.recipe import Recipe
+from domain.models import Ingredient
+from domain.models.step import Step
+from domain.models.ustensil import Ustensil
 
 
 class RecipeRouter:
@@ -40,7 +43,24 @@ class RecipeRouter:
 
     async def create_recipe(self, payload: RecipeCreateSchema) -> RecipeCreatedSchema:
         """Create a new recipe."""
-        result = await self._service.create(Recipe(name=payload.name))
+        recipe = Recipe(
+            name=payload.name,
+            description=payload.description,
+            ingredients=[
+                Ingredient(name=ing.name, unit=ing.unit)
+                for ing in payload.ingredients
+            ] if payload.ingredients else None,
+            ustensils=[
+                Ustensil(name=ust.name)
+                for ust in payload.ustensils
+            ] if payload.ustensils else None,
+            steps=[
+                Step(name=step.name, description=step.description)
+                for step in payload.steps
+            ] if payload.steps else None,
+            nutriscore=payload.nutriscore
+        )
+        result = await self._service.create(recipe)
 
         return RecipeCreatedSchema(uuid=result.uuid)
 
@@ -68,7 +88,25 @@ class RecipeRouter:
 
     async def update_recipe(self, uuid: StdUUID, payload: RecipeCreateSchema) -> None:
         """Update a recipe by UUID."""
-        await self._service.update(Recipe(uuid=self._to_uuid6(uuid), name=payload.name))
+        recipe = Recipe(
+            uuid=self._to_uuid6(uuid),
+            name=payload.name,
+            description=payload.description,
+            ingredients=[
+                Ingredient(name=ing.name, unit=ing.unit)
+                for ing in payload.ingredients
+            ] if payload.ingredients else None,
+            ustensils=[
+                Ustensil(name=ust.name)
+                for ust in payload.ustensils
+            ] if payload.ustensils else None,
+            steps=[
+                Step(name=step.name, description=step.description)
+                for step in payload.steps
+            ] if payload.steps else None,
+            nutriscore=payload.nutriscore
+        )
+        await self._service.update(recipe)
 
 
     async def patch_recipe(self, uuid: StdUUID, payload: RecipeCreateSchema) -> None:
@@ -81,7 +119,21 @@ class RecipeRouter:
 
         updated_recipe = Recipe(
             uuid=self._to_uuid6(uuid),
-            name=payload.name if payload.name is not None else existing.name
+            name=payload.name if payload.name is not None else existing.name,
+            description=payload.description if payload.description is not None else existing.description,
+            ingredients=[
+                Ingredient(name=ing.name, unit=ing.unit)
+                for ing in payload.ingredients
+            ] if payload.ingredients is not None else existing.ingredients,
+            ustensils=[
+                Ustensil(name=ust.name)
+                for ust in payload.ustensils
+            ] if payload.ustensils is not None else existing.ustensils,
+            steps=[
+                Step(name=step.name, description=step.description)
+                for step in payload.steps
+            ] if payload.steps is not None else existing.steps,
+            nutriscore=payload.nutriscore if payload.nutriscore is not None else existing.nutriscore
         )
         await self._service.update(updated_recipe)
 
