@@ -1,10 +1,18 @@
-from arclith import Logger
-from fastapi import APIRouter, Depends, HTTPException
-from uuid6 import UUID
+from typing import Annotated
 from uuid import UUID as StdUUID
 
+from arclith.domain.ports.logger import Logger
+from fastapi import APIRouter, Depends, HTTPException, Query
+from uuid6 import UUID
+
 from adapters.input.fastapi.dependencies import inject_tenant_uri
-from adapters.input.schemas.ustensil_schema import UstensilSchema, UstensilCreateSchema, UstensilCreatedSchema
+from adapters.input.schemas.ustensil_schema import (
+    UstensilCreateSchema,
+    UstensilCreatedSchema,
+    UstensilPatchSchema,
+    UstensilSchema,
+    UstensilUpdateSchema,
+)
 from application.services.ustensil_service import UstensilService
 from domain.models.ustensil import Ustensil
 
@@ -23,13 +31,13 @@ class UstensilRouter:
     def _register_routes(self) -> None:
         self.router.add_api_route("/", self.create_ustensil, methods=["POST"], response_model=UstensilCreatedSchema, status_code=201)
         self.router.add_api_route("/", self.list_ustensils, methods=["GET"], response_model=list[UstensilSchema], status_code=200)
-        self.router.add_api_route("/{name}", self.find_ustensils_by_name, methods=["GET"], response_model=list[UstensilSchema], status_code=200)
         self.router.add_api_route("/purge", self.purge_ustensils, methods=["DELETE"], response_model=dict, status_code=200)
         self.router.add_api_route("/{uuid}", self.get_ustensil, methods=["GET"], response_model=UstensilSchema, status_code=200)
         self.router.add_api_route("/{uuid}", self.update_ustensil, methods=["PUT"], response_model=None, status_code=204)
         self.router.add_api_route("/{uuid}", self.patch_ustensil, methods=["PATCH"], response_model=None, status_code=204)
         self.router.add_api_route("/{uuid}", self.delete_ustensil, methods=["DELETE"], response_model=None, status_code=204)
-        self.router.add_api_route("/{uuid}/duplicate", self.duplicate_ustensil, methods=["POST"], response_model=UstensilSchema, status_code=201)
+        self.router.add_api_route("/{uuid}/duplicate", self.duplicate_ustensil, methods = ["POST"],
+                                  response_model = UstensilCreatedSchema, status_code = 201)
 
     @staticmethod
     def _to_uuid6(uuid: StdUUID) -> UUID:
@@ -46,21 +54,25 @@ class UstensilRouter:
         if result is None:
             self._logger.warning("⚠️ Ustensil not found via HTTP", uuid=str(uuid))
             raise HTTPException(status_code=404, detail="Ustensil not found")
-        return UstensilSchema.model_validate(result)
+        return UstensilSchema.model_validate(result, from_attributes = True)
 
-    async def list_ustensils(self) -> list[UstensilSchema]:
-        """List all ustensils."""
-        return [UstensilSchema.model_validate(u) for u in await self._service.find_all()]
+    async def list_ustensils(
+            self,
+            name: Annotated[str | None, Query(
+                min_length = 1,
+                description = "Filtre par nom (recherche partielle, insensible à la casse).",
+                examples = ["Fouet"],
+            )] = None,
+    ) -> list[UstensilSchema]:
+        """List all ustensils, optionally filtered by name."""
+        items = await self._service.find_by_name(name) if name else await self._service.find_all()
+        return [UstensilSchema.model_validate(u, from_attributes = True) for u in items]
 
-    async def find_ustensils_by_name(self, name: str) -> list[UstensilSchema]:
-        """Find ustensils by name."""
-        return [UstensilSchema.model_validate(u) for u in await self._service.find_by_name(name)]
-
-    async def update_ustensil(self, uuid: StdUUID, payload: UstensilCreateSchema) -> None:
+    async def update_ustensil(self, uuid: StdUUID, payload: UstensilUpdateSchema) -> None:
         """Update an ustensil by UUID."""
         await self._service.update(Ustensil(uuid=self._to_uuid6(uuid), name=payload.name))
 
-    async def patch_ustensil(self, uuid: StdUUID, payload: UstensilCreateSchema) -> None:
+    async def patch_ustensil(self, uuid: StdUUID, payload: UstensilPatchSchema) -> None:
         """Patch an ustensil by UUID."""
         existing = await self._service.read(self._to_uuid6(uuid))
         if existing is None:
@@ -80,8 +92,7 @@ class UstensilRouter:
         purged = await self._service.purge()
         return {"purged": purged}
 
-    async def duplicate_ustensil(self, uuid: StdUUID) -> UstensilSchema:
+    async def duplicate_ustensil(self, uuid: StdUUID) -> UstensilCreatedSchema:
         """Duplicate an ustensil by UUID."""
         result = await self._service.duplicate(self._to_uuid6(uuid))
-        return UstensilSchema.model_validate(result)
-
+        return UstensilCreatedSchema(uuid = result.uuid)

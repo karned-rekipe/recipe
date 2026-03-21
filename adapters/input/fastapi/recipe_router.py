@@ -1,13 +1,21 @@
-from arclith import Logger
-from fastapi import APIRouter, Depends, HTTPException
-from uuid6 import UUID
+from typing import Annotated
 from uuid import UUID as StdUUID
 
+from arclith.domain.ports.logger import Logger
+from fastapi import APIRouter, Depends, HTTPException, Query
+from uuid6 import UUID
+
 from adapters.input.fastapi.dependencies import inject_tenant_uri
-from adapters.input.schemas.recipe_schema import RecipeSchema, RecipeCreateSchema, RecipeCreatedSchema
+from adapters.input.schemas.recipe_schema import (
+    RecipeCreateSchema,
+    RecipeCreatedSchema,
+    RecipePatchSchema,
+    RecipeSchema,
+    RecipeUpdateSchema,
+)
 from application.services.recipe_service import RecipeService
-from domain.models.recipe import Recipe
 from domain.models import Ingredient
+from domain.models.recipe import Recipe
 from domain.models.step import Step
 from domain.models.ustensil import Ustensil
 
@@ -27,13 +35,13 @@ class RecipeRouter:
     def _register_routes(self) -> None:
         self.router.add_api_route("/", self.create_recipe, methods=["POST"], response_model=RecipeCreatedSchema, status_code=201)
         self.router.add_api_route("/", self.list_recipes, methods=["GET"], response_model=list[RecipeSchema], status_code=200)
-        self.router.add_api_route("/{name}", self.find_recipes_by_name, methods=["GET"], response_model=list[RecipeSchema], status_code=200)
         self.router.add_api_route("/purge", self.purge_recipes, methods=["DELETE"], response_model=dict, status_code=200)
         self.router.add_api_route("/{uuid}", self.get_recipe, methods=["GET"], response_model=RecipeSchema, status_code=200)
         self.router.add_api_route("/{uuid}", self.update_recipe, methods=["PUT"], response_model=None, status_code=204)
         self.router.add_api_route("/{uuid}", self.patch_recipe, methods=["PATCH"], response_model=None, status_code=204)
         self.router.add_api_route("/{uuid}", self.delete_recipe, methods=["DELETE"], response_model=None, status_code=204)
-        self.router.add_api_route("/{uuid}/duplicate", self.duplicate_recipe, methods=["POST"], response_model=RecipeSchema, status_code=201)
+        self.router.add_api_route("/{uuid}/duplicate", self.duplicate_recipe, methods = ["POST"],
+                                  response_model = RecipeCreatedSchema, status_code = 201)
 
 
     @staticmethod
@@ -55,7 +63,7 @@ class RecipeRouter:
                 for ust in payload.ustensils
             ] if payload.ustensils else None,
             steps=[
-                Step(name=step.name, description=step.description)
+                Step(name = step.name, description = step.description, recipe_uuid = None)
                 for step in payload.steps
             ] if payload.steps else None,
             nutriscore=payload.nutriscore
@@ -73,20 +81,21 @@ class RecipeRouter:
             self._logger.warning("⚠️ Recipe not found via HTTP", uuid=str(uuid))
             raise HTTPException(status_code=404, detail="Recipe not found")
 
-        return RecipeSchema.model_validate(result)
+        return RecipeSchema.model_validate(result, from_attributes = True)
 
+    async def list_recipes(
+            self,
+            name: Annotated[str | None, Query(
+                min_length = 1,
+                description = "Filtre par nom (recherche partielle, insensible à la casse).",
+                examples = ["Pizza"],
+            )] = None,
+    ) -> list[RecipeSchema]:
+        """List all recipes, optionally filtered by name."""
+        items = await self._service.find_by_name(name) if name else await self._service.find_all()
+        return [RecipeSchema.model_validate(recipe, from_attributes = True) for recipe in items]
 
-    async def list_recipes(self) -> list[RecipeSchema]:
-        """List all recipes."""
-        return [RecipeSchema.model_validate(recipe) for recipe in await self._service.find_all()]
-
-
-    async def find_recipes_by_name(self, name: str) -> list[RecipeSchema]:
-        """Find recipes by name."""
-        return [RecipeSchema.model_validate(recipe) for recipe in await self._service.find_by_name(name)]
-
-
-    async def update_recipe(self, uuid: StdUUID, payload: RecipeCreateSchema) -> None:
+    async def update_recipe(self, uuid: StdUUID, payload: RecipeUpdateSchema) -> None:
         """Update a recipe by UUID."""
         recipe = Recipe(
             uuid=self._to_uuid6(uuid),
@@ -101,15 +110,14 @@ class RecipeRouter:
                 for ust in payload.ustensils
             ] if payload.ustensils else None,
             steps=[
-                Step(name=step.name, description=step.description)
+                Step(name = step.name, description = step.description, recipe_uuid = None)
                 for step in payload.steps
             ] if payload.steps else None,
             nutriscore=payload.nutriscore
         )
         await self._service.update(recipe)
 
-
-    async def patch_recipe(self, uuid: StdUUID, payload: RecipeCreateSchema) -> None:
+    async def patch_recipe(self, uuid: StdUUID, payload: RecipePatchSchema) -> None:
         """Patch a recipe by UUID."""
         existing = await self._service.read(self._to_uuid6(uuid))
 
@@ -130,7 +138,7 @@ class RecipeRouter:
                 for ust in payload.ustensils
             ] if payload.ustensils is not None else existing.ustensils,
             steps=[
-                Step(name=step.name, description=step.description)
+                Step(name = step.name, description = step.description, recipe_uuid = None)
                 for step in payload.steps
             ] if payload.steps is not None else existing.steps,
             nutriscore=payload.nutriscore if payload.nutriscore is not None else existing.nutriscore
@@ -148,8 +156,7 @@ class RecipeRouter:
         purged = await self._service.purge()
         return {"purged": purged}
 
-
-    async def duplicate_recipe(self, uuid: StdUUID) -> RecipeSchema:
+    async def duplicate_recipe(self, uuid: StdUUID) -> RecipeCreatedSchema:
         """Duplicate a recipe by UUID."""
         result = await self._service.duplicate(self._to_uuid6(uuid))
-        return RecipeSchema.model_validate(result)
+        return RecipeCreatedSchema(uuid = result.uuid)

@@ -1,6 +1,6 @@
+from arclith import Arclith
 from fastapi import FastAPI
 
-from arclith import Arclith
 from adapters.input.fastapi.ingredient_router import IngredientRouter
 from adapters.input.fastapi.recipe_router import RecipeRouter
 from adapters.input.fastapi.step_router import StepRouter
@@ -17,6 +17,6 @@ def register_routers(app: FastAPI, arclith: Arclith) -> None:
     ustensil_service, _ = build_ustensil_service(arclith)
     step_service, _ = build_step_service(arclith)
     app.include_router(IngredientRouter(ingredient_service, logger).router)
-    app.include_router(RecipeRouter(recipe_service, logger).router)
     app.include_router(UstensilRouter(ustensil_service, logger).router)
+    app.include_router(RecipeRouter(recipe_service, logger).router)
     app.include_router(StepRouter(step_service, logger).router)
