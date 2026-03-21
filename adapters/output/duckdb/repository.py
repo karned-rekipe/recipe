@@ -1,16 +1,11 @@
-from arclith.adapters.output.duckdb.repository import DuckDBRepository
-from domain.models.ingredient import Ingredient
-from domain.ports.ingredient_repository import IngredientRepository
+from adapters.output.duckdb.ingredient_repository import DuckDBIngredientRepository
+from adapters.output.duckdb.recipe_repository import DuckDBRecipeRepository
+from adapters.output.duckdb.step_repository import DuckDBStepRepository
+from adapters.output.duckdb.ustensil_repository import DuckDBUstensilRepository
 
-
-class DuckDBIngredientRepository(DuckDBRepository[Ingredient], IngredientRepository):
-    def __init__(self, path: str) -> None:
-        super().__init__(path, Ingredient)
-
-    async def find_by_name(self, name: str) -> list[Ingredient]:
-        rows = self._fetch(
-            f"SELECT * FROM {self._table} WHERE deleted_at IS NULL AND lower(name) LIKE ?",
-            [f"%{name.lower()}%"],
-        )
-        return [self._row_to_entity(r) for r in rows]
-
+__all__ = [
+    "DuckDBIngredientRepository",
+    "DuckDBRecipeRepository",
+    "DuckDBUstensilRepository",
+    "DuckDBStepRepository",
+]

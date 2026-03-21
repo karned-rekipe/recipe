@@ -1,0 +1,13 @@
+from arclith import BaseService, Logger
+from domain.models.ustensil import Ustensil
+from domain.ports.ustensil_repository import UstensilRepository
+from application.use_cases import FindByNameUseCase
+
+
+class UstensilService(BaseService[Ustensil]):
+    def __init__(self, repository: UstensilRepository, logger: Logger, retention_days: float | None = None) -> None:
+        super().__init__(repository, logger, retention_days)
+        self._find_by_name_uc = FindByNameUseCase(repository, logger)
+
+    async def find_by_name(self, name: str) -> list[Ustensil]:
+        return await self._find_by_name_uc.execute(name)
