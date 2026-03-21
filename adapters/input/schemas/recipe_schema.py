@@ -42,6 +42,7 @@ class RecipePatchSchema(RecipeCreateSchema):
 class RecipeUpdateSchema(RecipeCreateSchema):
     pass
 
+
 class RecipeCreatedSchema(BaseModel):
     uuid: StdUUID = Field(
         description="UUID de la recette créée.",

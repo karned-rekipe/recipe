@@ -1,24 +1,12 @@
-from typing import Generic, Protocol, TypeVar, runtime_checkable
-
-
-@runtime_checkable
-class _HasName(Protocol):
-    name: str
-    is_deleted: bool
-
-
-T = TypeVar("T", bound=_HasName)
-
-
-class _FindByNameRepository(Protocol[T]):
-    async def find_by_name(self, name: str) -> list[T]: ...
-
+from typing import Any, Generic, TypeVar
 
 from arclith.domain.ports.logger import Logger
 
+T = TypeVar("T")
+
 
 class FindByNameUseCase(Generic[T]):
-    def __init__(self, repository: _FindByNameRepository[T], logger: Logger) -> None:
+    def __init__(self, repository: Any, logger: Logger) -> None:
         self._repository = repository
         self._logger = logger
 
