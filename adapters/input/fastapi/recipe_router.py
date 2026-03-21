@@ -14,6 +14,7 @@ from adapters.input.schemas.recipe_schema import (
     RecipeUpdateSchema,
 )
 from application.services.recipe_service import RecipeService
+from application.services.step_service import StepService
 from domain.models import Ingredient
 from domain.models.recipe import Recipe
 from domain.models.step import Step
@@ -21,8 +22,9 @@ from domain.models.ustensil import Ustensil
 
 
 class RecipeRouter:
-    def __init__(self, service: RecipeService, logger: Logger) -> None:
+    def __init__(self, service: RecipeService, step_service: StepService, logger: Logger) -> None:
         self._service = service
+        self._step_service = step_service
         self._logger = logger
         self.router = APIRouter(
             prefix="/v1/recipes",
@@ -80,6 +82,9 @@ class RecipeRouter:
         if result is None:
             self._logger.warning("⚠️ Recipe not found via HTTP", uuid=str(uuid))
             raise HTTPException(status_code=404, detail="Recipe not found")
+
+        steps = await self._step_service.find_by_recipe(self._to_uuid6(uuid))
+        result = result.model_copy(update = {"steps": steps or None})
 
         return RecipeSchema.model_validate(result, from_attributes = True)
 
