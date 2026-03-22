@@ -35,15 +35,35 @@ class RecipeRouter:
 
 
     def _register_routes(self) -> None:
-        self.router.add_api_route("/", self.create_recipe, methods=["POST"], response_model=RecipeCreatedSchema, status_code=201)
-        self.router.add_api_route("/", self.list_recipes, methods=["GET"], response_model=list[RecipeSchema], status_code=200)
-        self.router.add_api_route("/purge", self.purge_recipes, methods=["DELETE"], response_model=dict, status_code=200)
-        self.router.add_api_route("/{uuid}", self.get_recipe, methods=["GET"], response_model=RecipeSchema, status_code=200)
-        self.router.add_api_route("/{uuid}", self.update_recipe, methods=["PUT"], response_model=None, status_code=204)
-        self.router.add_api_route("/{uuid}", self.patch_recipe, methods=["PATCH"], response_model=None, status_code=204)
-        self.router.add_api_route("/{uuid}", self.delete_recipe, methods=["DELETE"], response_model=None, status_code=204)
+        self.router.add_api_route("/", self.create_recipe, methods = ["POST"], response_model = RecipeCreatedSchema,
+                                  status_code = 201,
+                                  summary = "Create recipe", response_description = "UUID of the created recipe")
+        self.router.add_api_route("/", self.list_recipes, methods = ["GET"], response_model = list[RecipeSchema],
+                                  status_code = 200,
+                                  summary = "List recipes",
+                                  response_description = "List of active recipes with their linked data")
+        self.router.add_api_route("/purge", self.purge_recipes, methods = ["DELETE"], response_model = dict,
+                                  status_code = 200,
+                                  summary = "Purge soft-deleted recipes",
+                                  response_description = "Number of permanently deleted records")
+        self.router.add_api_route("/{uuid}", self.get_recipe, methods = ["GET"], response_model = RecipeSchema,
+                                  status_code = 200,
+                                  summary = "Get recipe",
+                                  response_description = "The full recipe with linked ingredients, ustensils and steps",
+                                  responses = {404: {"description": "Recipe not found"}})
+        self.router.add_api_route("/{uuid}", self.update_recipe, methods = ["PUT"], response_model = None,
+                                  status_code = 204,
+                                  summary = "Replace recipe", responses = {404: {"description": "Recipe not found"}})
+        self.router.add_api_route("/{uuid}", self.patch_recipe, methods = ["PATCH"], response_model = None,
+                                  status_code = 204,
+                                  summary = "Partially update recipe",
+                                  responses = {404: {"description": "Recipe not found"}})
+        self.router.add_api_route("/{uuid}", self.delete_recipe, methods = ["DELETE"], response_model = None,
+                                  status_code = 204,
+                                  summary = "Delete recipe")
         self.router.add_api_route("/{uuid}/duplicate", self.duplicate_recipe, methods = ["POST"],
-                                  response_model = RecipeCreatedSchema, status_code = 201)
+                                  response_model = RecipeCreatedSchema, status_code = 201,
+                                  summary = "Duplicate recipe", response_description = "UUID of the duplicated recipe")
 
 
     @staticmethod
@@ -52,7 +72,16 @@ class RecipeRouter:
 
 
     async def create_recipe(self, payload: RecipeCreateSchema) -> RecipeCreatedSchema:
-        """Create a new recipe."""
+        """Create a new recipe.
+
+        Returns the UUID of the created recipe.
+        Workflow — after creation, attach content using:
+        - `POST /v1/recipes/{uuid}/steps` to add preparation steps
+        - `POST /v1/recipes/{uuid}/ingredients/{ingredient_uuid}` to link existing ingredients
+        - `POST /v1/recipes/{uuid}/ustensils/{ustensil_uuid}` to link existing ustensils
+
+        Inline ingredients/ustensils/steps can also be passed directly in the body (they are created on the fly).
+        """
         recipe = Recipe(
             name=payload.name,
             description=payload.description,
@@ -76,7 +105,11 @@ class RecipeRouter:
 
 
     async def get_recipe(self, uuid: StdUUID) -> RecipeSchema:
-        """Get a recipe by UUID."""
+        """Get a recipe by its UUID.
+
+        Returns the full recipe including all linked ingredients, ustensils and steps.
+        Fields: uuid, name, description, nutriscore, ingredients (list), ustensils (list), steps (list), created_at, updated_at, version.
+        """
         result = await self._service.read(self._to_uuid6(uuid))
 
         if result is None:
@@ -92,16 +125,27 @@ class RecipeRouter:
             self,
             name: Annotated[str | None, Query(
                 min_length = 1,
-                description = "Filtre par nom (recherche partielle, insensible à la casse).",
+                description = "Filtre optionnel : recherche partielle sur le nom, insensible à la casse. Ex: 'pizza' retournera toutes les recettes dont le nom contient 'pizza'.",
                 examples = ["Pizza"],
             )] = None,
     ) -> list[RecipeSchema]:
-        """List all recipes, optionally filtered by name."""
+        """List all active (non-deleted) recipes.
+
+        Pass `name` for a partial, case-insensitive name filter.
+        Each recipe includes its full linked data: ingredients, ustensils and steps.
+        Fields per item: uuid, name, description, nutriscore, ingredients, ustensils, steps, created_at, updated_at, version.
+        """
         items = await self._service.find_by_name(name) if name else await self._service.find_all()
         return [RecipeSchema.model_validate(recipe, from_attributes = True) for recipe in items]
 
     async def update_recipe(self, uuid: StdUUID, payload: RecipeUpdateSchema) -> None:
-        """Update a recipe by UUID."""
+        """Replace a recipe's content (PUT semantics).
+
+        Fully overwrites name, description, nutriscore, and inline ingredients/ustensils/steps.
+        To manage links independently, prefer the dedicated sub-resources:
+        `POST /v1/recipes/{uuid}/ingredients/{ingredient_uuid}`, `POST /v1/recipes/{uuid}/ustensils/{ustensil_uuid}`,
+        `POST /v1/recipes/{uuid}/steps`.
+        """
         recipe = Recipe(
             uuid=self._to_uuid6(uuid),
             name=payload.name,
@@ -123,7 +167,10 @@ class RecipeRouter:
         await self._service.update(recipe)
 
     async def patch_recipe(self, uuid: StdUUID, payload: RecipePatchSchema) -> None:
-        """Patch a recipe by UUID."""
+        """Partially update a recipe (PATCH semantics).
+
+        Only the fields provided in the body are updated; omitted fields keep their current value.
+        """
         existing = await self._service.read(self._to_uuid6(uuid))
 
         if existing is None:
@@ -152,16 +199,29 @@ class RecipeRouter:
 
 
     async def delete_recipe(self, uuid: StdUUID) -> None:
-        """Delete a recipe by UUID."""
+        """Soft-delete a recipe.
+
+        The recipe is marked as deleted and excluded from list results.
+        It is retained until the purge retention period expires.
+        Use `DELETE /v1/recipes/purge` to permanently remove expired entries.
+        """
         await self._service.delete(self._to_uuid6(uuid))
 
 
     async def purge_recipes(self) -> dict:
-        """Purge all soft-deleted recipes that have exceeded the retention period."""
+        """Permanently delete soft-deleted recipes that have exceeded the retention period.
+
+        Returns {"purged": <count>} with the number of permanently deleted records.
+        This operation is irreversible.
+        """
         purged = await self._service.purge()
         return {"purged": purged}
 
     async def duplicate_recipe(self, uuid: StdUUID) -> RecipeCreatedSchema:
-        """Duplicate a recipe by UUID."""
+        """Duplicate a recipe, assigning it a new UUID.
+
+        Creates a full copy including all linked ingredients, ustensils and steps.
+        Returns the UUID of the new recipe.
+        """
         result = await self._service.duplicate(self._to_uuid6(uuid))
         return RecipeCreatedSchema(uuid = result.uuid)

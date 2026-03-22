@@ -22,16 +22,26 @@ class RecipeIngredientRouter:
 
     def _register_routes(self) -> None:
         self.router.add_api_route("/{ingredient_uuid}", self.add_ingredient, methods = ["POST"],
-                                  response_model = IngredientCreatedSchema, status_code = 201)
+                                  response_model = IngredientCreatedSchema, status_code = 201,
+                                  summary = "Link ingredient to recipe",
+                                  response_description = "UUID of the linked ingredient",
+                                  responses = {404: {"description": "Recipe or ingredient not found"}})
         self.router.add_api_route("/{ingredient_uuid}", self.remove_ingredient, methods = ["DELETE"],
-                                  response_model = None, status_code = 204)
+                                  response_model = None, status_code = 204,
+                                  summary = "Unlink ingredient from recipe")
 
     @staticmethod
     def _to_uuid6(uuid: StdUUID) -> UUID:
         return UUID(str(uuid))
 
     async def add_ingredient(self, uuid: StdUUID, ingredient_uuid: StdUUID) -> IngredientCreatedSchema:
-        """Link an existing ingredient to a recipe."""
+        """Link an existing ingredient to a recipe.
+
+        Copies the ingredient's data (name, unit, uuid) into the recipe at the time of linking.
+        The original uuid is preserved to allow future synchronisation.
+        Idempotent: if the ingredient is already linked, the call is silently ignored.
+        Returns the UUID of the linked ingredient.
+        """
         recipe = await self._service.read(self._to_uuid6(uuid))
         if recipe is None:
             raise HTTPException(status_code = 404, detail = "Recipe not found")
@@ -42,7 +52,12 @@ class RecipeIngredientRouter:
         return IngredientCreatedSchema(uuid = ingredient_uuid)
 
     async def remove_ingredient(self, uuid: StdUUID, ingredient_uuid: StdUUID) -> None:
-        """Unlink an ingredient from a recipe."""
+        """Unlink an ingredient from a recipe.
+
+        Removes the ingredient snapshot from the recipe's ingredient list.
+        Silent no-op if the ingredient is not currently linked (idempotent).
+        Does not affect the ingredient entity itself.
+        """
         recipe = await self._service.read(self._to_uuid6(uuid))
         if recipe is None:
             raise HTTPException(status_code = 404, detail = "Recipe not found")
