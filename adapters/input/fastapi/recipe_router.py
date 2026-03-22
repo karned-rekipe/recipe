@@ -128,20 +128,32 @@ class RecipeRouter:
                 description = "Filtre optionnel : recherche partielle sur le nom, insensible à la casse. Ex: 'pizza' retournera toutes les recettes dont le nom contient 'pizza'.",
                 examples = ["Pizza"],
             )] = None,
+            include_steps: Annotated[bool, Query(
+                description = "Inclure ou non les étapes associées à chaque recette. "
+                              "Mettre à false pour éviter un appel supplémentaire par recette.",
+            )] = True,
     ) -> list[RecipeSchema]:
         """List all active (non-deleted) recipes.
 
         Pass `name` for a partial, case-insensitive name filter.
-        Each recipe includes its full linked data: ingredients, ustensils and steps.
+
+        By default (`include_steps=true`), each recipe includes its full linked data:
+        ingredients, ustensils and steps. When `include_steps=false`, the steps are not
+        fetched from the step store, which avoids one additional query per recipe.
+
         Steps are fetched from the step store (created via POST /v1/recipes/{uuid}/steps).
-        Fields per item: uuid, name, description, nutriscore, ingredients, ustensils, steps, created_at, updated_at, version.
+        Fields per item: uuid, name, description, nutriscore, ingredients, ustensils, steps,
+        created_at, updated_at, version.
         """
         items = await self._service.find_by_name(name) if name else await self._service.find_all()
-        result = []
+        result: list[RecipeSchema] = []
         for recipe in items:
-            steps = await self._step_service.find_by_recipe(recipe.uuid)
-            enriched = recipe.model_copy(update = {"steps": steps or None})
-            result.append(RecipeSchema.model_validate(enriched, from_attributes = True))
+            if include_steps:
+                steps = await self._step_service.find_by_recipe(recipe.uuid)
+                enriched = recipe.model_copy(update = {"steps": steps or None})
+                result.append(RecipeSchema.model_validate(enriched, from_attributes = True))
+            else:
+                result.append(RecipeSchema.model_validate(recipe, from_attributes = True))
         return result
 
     async def update_recipe(self, uuid: StdUUID, payload: RecipeUpdateSchema) -> None:
