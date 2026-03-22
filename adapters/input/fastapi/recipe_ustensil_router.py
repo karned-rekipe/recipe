@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from uuid6 import UUID
 
 from adapters.input.fastapi.dependencies import inject_tenant_uri
-from adapters.input.schemas.ustensil_schema import UstensilCreatedSchema
+from adapters.input.schemas.ustensil_schema import UstensilCreatedSchema, UstensilSchema
 from application.services.recipe_service import RecipeService
 
 
@@ -21,6 +21,11 @@ class RecipeUstensilRouter:
         self._register_routes()
 
     def _register_routes(self) -> None:
+        self.router.add_api_route("/", self.list_ustensils, methods = ["GET"],
+                                  response_model = list[UstensilSchema], status_code = 200,
+                                  summary = "List recipe ustensils",
+                                  response_description = "Ustensils linked to the recipe",
+                                  responses = {404: {"description": "Recipe not found"}})
         self.router.add_api_route("/{ustensil_uuid}", self.add_ustensil, methods = ["POST"],
                                   response_model = UstensilCreatedSchema, status_code = 201,
                                   summary = "Link ustensil to recipe",
@@ -33,6 +38,18 @@ class RecipeUstensilRouter:
     @staticmethod
     def _to_uuid6(uuid: StdUUID) -> UUID:
         return UUID(str(uuid))
+
+    async def list_ustensils(self, uuid: StdUUID) -> list[UstensilSchema]:
+        """List all ustensils currently linked to the recipe.
+
+        Returns the snapshot data as stored in the recipe at link time.
+        Each item: uuid, name, created_at, updated_at, version.
+        """
+        recipe = await self._service.read(self._to_uuid6(uuid))
+        if recipe is None:
+            self._logger.warning("⚠️ Recipe not found via HTTP", uuid = str(uuid))
+            raise HTTPException(status_code = 404, detail = "Recipe not found")
+        return [UstensilSchema.model_validate(u, from_attributes = True) for u in (recipe.ustensils or [])]
 
     async def add_ustensil(self, uuid: StdUUID, ustensil_uuid: StdUUID) -> UstensilCreatedSchema:
         """Link an existing ustensil to a recipe.

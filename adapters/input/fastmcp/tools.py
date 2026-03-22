@@ -21,6 +21,6 @@ def register_tools(mcp: fastmcp.FastMCP, arclith: Arclith) -> None:
     IngredientMCP(ingredient_service, logger, mcp)
     UstensilMCP(ustensil_service, logger, mcp)
     StepMCP(step_service, logger, mcp)
-    RecipeMCP(recipe_service, logger, mcp)
+    RecipeMCP(recipe_service, step_service, logger, mcp)
     RecipeIngredientMCP(recipe_service, logger, mcp)
     RecipeUstensilMCP(recipe_service, logger, mcp)

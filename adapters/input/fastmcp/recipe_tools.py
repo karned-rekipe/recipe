@@ -9,12 +9,14 @@ from uuid6 import UUID
 from adapters.input.fastmcp.dependencies import inject_tenant_uri
 from adapters.input.schemas.recipe_schema import RecipeSchema
 from application.services.recipe_service import RecipeService
+from application.services.step_service import StepService
 from domain.models.recipe import Recipe
 
 
 class RecipeMCP:
-    def __init__(self, service: RecipeService, logger: Logger, mcp: fastmcp.FastMCP) -> None:
+    def __init__(self, service: RecipeService, step_service: StepService, logger: Logger, mcp: fastmcp.FastMCP) -> None:
         self._service = service
+        self._step_service = step_service
         self._logger = logger
         self._mcp = mcp
         self._register_tools()
@@ -25,6 +27,7 @@ class RecipeMCP:
 
     def _register_tools(self) -> None:
         service = self._service
+        step_service = self._step_service
         logger = self._logger
         to_uuid6 = self._to_uuid6
 
@@ -72,6 +75,8 @@ class RecipeMCP:
             if result is None:
                 logger.warning("⚠️ Recipe not found via MCP", uuid=uuid)
                 return None
+            steps = await step_service.find_by_recipe(to_uuid6(StdUUID(uuid)))
+            result = result.model_copy(update = {"steps": steps or None})
             return RecipeSchema.model_validate(result).model_dump()
 
         @self._mcp.tool
@@ -133,7 +138,12 @@ class RecipeMCP:
             """
             await inject_tenant_uri(ctx)
             items = await service.find_by_name(name) if name else await service.find_all()
-            return [RecipeSchema.model_validate(i).model_dump() for i in items]
+            result = []
+            for recipe in items:
+                steps = await step_service.find_by_recipe(recipe.uuid)
+                enriched = recipe.model_copy(update = {"steps": steps or None})
+                result.append(RecipeSchema.model_validate(enriched).model_dump())
+            return result
 
         @self._mcp.tool
         async def duplicate_recipe(

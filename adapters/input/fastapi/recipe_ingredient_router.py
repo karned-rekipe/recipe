@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from uuid6 import UUID
 
 from adapters.input.fastapi.dependencies import inject_tenant_uri
-from adapters.input.schemas.ingredient_schema import IngredientCreatedSchema
+from adapters.input.schemas.ingredient_schema import IngredientCreatedSchema, IngredientSchema
 from application.services.recipe_service import RecipeService
 
 
@@ -21,6 +21,11 @@ class RecipeIngredientRouter:
         self._register_routes()
 
     def _register_routes(self) -> None:
+        self.router.add_api_route("/", self.list_ingredients, methods = ["GET"],
+                                  response_model = list[IngredientSchema], status_code = 200,
+                                  summary = "List recipe ingredients",
+                                  response_description = "Ingredients linked to the recipe",
+                                  responses = {404: {"description": "Recipe not found"}})
         self.router.add_api_route("/{ingredient_uuid}", self.add_ingredient, methods = ["POST"],
                                   response_model = IngredientCreatedSchema, status_code = 201,
                                   summary = "Link ingredient to recipe",
@@ -33,6 +38,18 @@ class RecipeIngredientRouter:
     @staticmethod
     def _to_uuid6(uuid: StdUUID) -> UUID:
         return UUID(str(uuid))
+
+    async def list_ingredients(self, uuid: StdUUID) -> list[IngredientSchema]:
+        """List all ingredients currently linked to the recipe.
+
+        Returns the snapshot data as stored in the recipe at link time.
+        Each item: uuid, name, unit, created_at, updated_at, version.
+        """
+        recipe = await self._service.read(self._to_uuid6(uuid))
+        if recipe is None:
+            self._logger.warning("⚠️ Recipe not found via HTTP", uuid = str(uuid))
+            raise HTTPException(status_code = 404, detail = "Recipe not found")
+        return [IngredientSchema.model_validate(i, from_attributes = True) for i in (recipe.ingredients or [])]
 
     async def add_ingredient(self, uuid: StdUUID, ingredient_uuid: StdUUID) -> IngredientCreatedSchema:
         """Link an existing ingredient to a recipe.

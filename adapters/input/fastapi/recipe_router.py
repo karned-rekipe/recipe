@@ -133,10 +133,16 @@ class RecipeRouter:
 
         Pass `name` for a partial, case-insensitive name filter.
         Each recipe includes its full linked data: ingredients, ustensils and steps.
+        Steps are fetched from the step store (created via POST /v1/recipes/{uuid}/steps).
         Fields per item: uuid, name, description, nutriscore, ingredients, ustensils, steps, created_at, updated_at, version.
         """
         items = await self._service.find_by_name(name) if name else await self._service.find_all()
-        return [RecipeSchema.model_validate(recipe, from_attributes = True) for recipe in items]
+        result = []
+        for recipe in items:
+            steps = await self._step_service.find_by_recipe(recipe.uuid)
+            enriched = recipe.model_copy(update = {"steps": steps or None})
+            result.append(RecipeSchema.model_validate(enriched, from_attributes = True))
+        return result
 
     async def update_recipe(self, uuid: StdUUID, payload: RecipeUpdateSchema) -> None:
         """Replace a recipe's content (PUT semantics).
