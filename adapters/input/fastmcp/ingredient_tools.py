@@ -1,14 +1,14 @@
 from typing import Annotated
 from uuid import UUID as StdUUID
-from uuid6 import UUID
 
 import fastmcp
+from arclith.domain.ports.logger import Logger
 from pydantic import Field
+from uuid6 import UUID
 
 from adapters.input.fastmcp.dependencies import inject_tenant_uri
 from adapters.input.schemas.ingredient_schema import IngredientSchema
 from application.services.ingredient_service import IngredientService
-from arclith.domain.ports.logger import Logger
 from domain.models.ingredient import Ingredient
 
 
@@ -30,21 +30,35 @@ class IngredientMCP:
 
         @self._mcp.tool
         async def create_ingredient(
-            name: Annotated[str, Field(description="Nom de l'ingrédient.", examples=["Farine de blé"])],
-            unit: Annotated[str | None, Field(default=None, description="Unité de mesure (ex. g, kg, ml). None si non applicable.", examples=["g", "kg", None])] = None,
+                name: Annotated[str, Field(
+                    description = "Nom de l'ingrédient (ex. 'Farine de blé', 'Sel fin'). Sera normalisé (espaces rognés).",
+                    examples = ["Farine de blé", "Sel fin"])],
+                unit: Annotated[str | None, Field(default = None,
+                                                  description = "Unité de mesure associée (ex. 'g', 'kg', 'ml', 'cl'). Omettre si non applicable.",
+                                                  examples = ["g", "kg", "ml", None])] = None,
             ctx: fastmcp.Context = None,
         ) -> dict:
-            """Create a new ingredient."""
+            """Create a new reusable ingredient.
+
+            Returns the created ingredient with its generated UUID.
+            Once created, use `link_ingredient_to_recipe` to attach it to a recipe.
+            Fields returned: uuid, name, unit, created_at, updated_at, version.
+            """
             await inject_tenant_uri(ctx)
             result = await service.create(Ingredient(name=name, unit=unit))
             return IngredientSchema.model_validate(result).model_dump()
 
         @self._mcp.tool
         async def get_ingredient(
-            uuid: Annotated[str, Field(description="UUID de l'ingrédient.", examples=["01951234-5678-7abc-def0-123456789abc"])],
+                uuid: Annotated[str, Field(description = "UUID (UUIDv7) de l'ingrédient à récupérer.",
+                                           examples = ["01951234-5678-7abc-def0-123456789abc"])],
             ctx: fastmcp.Context = None,
         ) -> dict | None:
-            """Get an ingredient by its UUID."""
+            """Get an ingredient by its UUID.
+
+            Returns the full ingredient object or null if not found.
+            Fields: uuid, name, unit, created_at, updated_at, version.
+            """
             await inject_tenant_uri(ctx)
             result = await service.read(to_uuid6(StdUUID(uuid)))
             if result is None:
@@ -54,48 +68,79 @@ class IngredientMCP:
 
         @self._mcp.tool
         async def update_ingredient(
-            uuid: Annotated[str, Field(description="UUID de l'ingrédient à modifier.", examples=["01951234-5678-7abc-def0-123456789abc"])],
-            name: Annotated[str, Field(description="Nouveau nom de l'ingrédient.", examples=["Farine complète"])],
-            unit: Annotated[str | None, Field(default=None, description="Nouvelle unité de mesure.", examples=["g", None])] = None,
+                uuid: Annotated[str, Field(description = "UUID (UUIDv7) de l'ingrédient à modifier.",
+                                           examples = ["01951234-5678-7abc-def0-123456789abc"])],
+                name: Annotated[str, Field(description = "Nouveau nom de l'ingrédient.",
+                                           examples = ["Farine complète", "Gros sel"])],
+                unit: Annotated[str | None, Field(default = None,
+                                                  description = "Nouvelle unité de mesure. Passer null pour la supprimer.",
+                                                  examples = ["g", None])] = None,
             ctx: fastmcp.Context = None,
         ) -> dict:
-            """Update an existing ingredient."""
+            """Replace name and unit of an existing ingredient.
+
+            Full replacement (PUT semantics): both name and unit are overwritten.
+            Returns the updated ingredient.
+            Note: updating an ingredient does not propagate to recipes where it is already linked (snapshot model).
+            """
             await inject_tenant_uri(ctx)
             result = await service.update(Ingredient(uuid=to_uuid6(StdUUID(uuid)), name=name, unit=unit))
             return IngredientSchema.model_validate(result).model_dump()
 
         @self._mcp.tool
         async def delete_ingredient(
-            uuid: Annotated[str, Field(description="UUID de l'ingrédient à supprimer.", examples=["01951234-5678-7abc-def0-123456789abc"])],
+                uuid: Annotated[str, Field(description = "UUID (UUIDv7) de l'ingrédient à supprimer.",
+                                           examples = ["01951234-5678-7abc-def0-123456789abc"])],
             ctx: fastmcp.Context = None,
         ) -> None:
-            """Delete an ingredient by its UUID."""
+            """Soft-delete an ingredient.
+
+            The ingredient is marked as deleted and excluded from list results.
+            It is retained until the purge retention period expires.
+            Use `purge_ingredients` to permanently remove expired entries.
+            """
             await inject_tenant_uri(ctx)
             await service.delete(to_uuid6(StdUUID(uuid)))
 
         @self._mcp.tool
         async def list_ingredients(
-            name: Annotated[str | None, Field(default=None, description="Filtre par nom (recherche partielle, insensible à la casse).", examples=["farine", None])] = None,
+                name: Annotated[str | None, Field(default = None,
+                                                  description = "Filtre optionnel : recherche partielle sur le nom, insensible à la casse. Ex: 'far' retournera 'Farine de blé'.",
+                                                  examples = ["farine", None])] = None,
             ctx: fastmcp.Context = None,
         ) -> list[dict]:
-            """List all ingredients, optionally filtered by name."""
+            """List all active (non-deleted) ingredients.
+
+            Pass `name` for a partial, case-insensitive name filter.
+            Each item: uuid, name, unit, created_at, updated_at, version.
+            Use these UUIDs with `link_ingredient_to_recipe` to attach ingredients to a recipe.
+            """
             await inject_tenant_uri(ctx)
             items = await service.find_by_name(name) if name else await service.find_all()
             return [IngredientSchema.model_validate(i).model_dump() for i in items]
 
         @self._mcp.tool
         async def duplicate_ingredient(
-            uuid: Annotated[str, Field(description="UUID de l'ingrédient à dupliquer.", examples=["01951234-5678-7abc-def0-123456789abc"])],
+                uuid: Annotated[str, Field(description = "UUID (UUIDv7) de l'ingrédient à dupliquer.",
+                                           examples = ["01951234-5678-7abc-def0-123456789abc"])],
             ctx: fastmcp.Context = None,
         ) -> dict:
-            """Duplicate an ingredient, assigning it a new UUID."""
+            """Duplicate an ingredient, assigning it a new UUID.
+
+            Creates an independent copy with the same name and unit.
+            Returns the new ingredient with its own UUID.
+            """
             await inject_tenant_uri(ctx)
             result = await service.duplicate(to_uuid6(StdUUID(uuid)))
             return IngredientSchema.model_validate(result).model_dump()
 
         @self._mcp.tool
         async def purge_ingredients(ctx: fastmcp.Context = None) -> dict:
-            """Purge all soft-deleted ingredients that have exceeded the retention period."""
+            """Permanently delete soft-deleted ingredients that have exceeded the retention period.
+
+            Returns {"purged": <count>} with the number of permanently deleted records.
+            This operation is irreversible.
+            """
             await inject_tenant_uri(ctx)
             purged = await service.purge()
             return {"purged": purged}
