@@ -23,4 +23,4 @@ def register_routers(app: FastAPI, arclith: Arclith) -> None:
     app.include_router(RecipeRouter(recipe_service, step_service, logger).router)
     app.include_router(RecipeIngredientRouter(recipe_service, logger).router)
     app.include_router(RecipeUstensilRouter(recipe_service, logger).router)
-    app.include_router(StepRouter(step_service, logger).router)
+    app.include_router(StepRouter(step_service, recipe_service, logger).router)
