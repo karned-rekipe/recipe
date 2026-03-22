@@ -13,13 +13,15 @@ from adapters.input.schemas.step_schema import (
     StepSchema,
     StepUpdateSchema,
 )
+from application.services.recipe_service import RecipeService
 from application.services.step_service import StepService
 from domain.models.step import Step
 
 
 class StepRouter:
-    def __init__(self, service: StepService, logger: Logger) -> None:
+    def __init__(self, service: StepService, recipe_service: RecipeService, logger: Logger) -> None:
         self._service = service
+        self._recipe_service = recipe_service
         self._logger = logger
         self.router = APIRouter(prefix = "/v1/recipes/{uuid}/steps", tags = ["recipes : steps"],
                                 dependencies = [Depends(inject_tenant_uri)])
@@ -28,10 +30,12 @@ class StepRouter:
     def _register_routes(self) -> None:
         self.router.add_api_route("/", self.create_step, methods = ["POST"], response_model = StepCreatedSchema,
                                   status_code = 201,
-                                  summary = "Create step", response_description = "UUID of the created step")
+                                  summary = "Create step", response_description = "UUID of the created step",
+                                  responses = {404: {"description": "Recipe not found"}})
         self.router.add_api_route("/", self.list_steps, methods = ["GET"], response_model = list[StepSchema],
                                   summary = "List steps for recipe",
-                                  response_description = "Steps of the recipe in creation order")
+                                  response_description = "Steps of the recipe in creation order",
+                                  responses = {404: {"description": "Recipe not found"}})
         self.router.add_api_route("/purge", self.purge_steps, methods = ["DELETE"], status_code = 200,
                                   summary = "Purge soft-deleted steps",
                                   response_description = "Number of permanently deleted records")
@@ -64,6 +68,10 @@ class StepRouter:
         Returns the UUID of the created step.
         Fields: uuid, recipe_uuid, name, description, created_at, updated_at, version.
         """
+        recipe = await self._recipe_service.read(self._to_uuid6(uuid))
+        if recipe is None:
+            self._logger.warning("⚠️ Recipe not found via HTTP", uuid = str(uuid))
+            raise HTTPException(status_code = 404, detail = "Recipe not found")
         result = await self._service.create(Step(
             recipe_uuid = self._to_uuid6(uuid),
             name=payload.name,
@@ -143,6 +151,10 @@ class StepRouter:
         Returns steps in creation order (UUIDv7 time-ordered).
         Each item: uuid, recipe_uuid, name, description, created_at, updated_at, version.
         """
+        recipe = await self._recipe_service.read(self._to_uuid6(uuid))
+        if recipe is None:
+            self._logger.warning("⚠️ Recipe not found via HTTP", uuid = str(uuid))
+            raise HTTPException(status_code = 404, detail = "Recipe not found")
         items = await self._service.find_by_recipe(self._to_uuid6(uuid))
         if name:
             name_lower = name.lower()
