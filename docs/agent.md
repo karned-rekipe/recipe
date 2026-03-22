@@ -43,7 +43,7 @@ cd _sample
 uv run python main_mcp_http.py
 ```
 
-Écoute sur `http://127.0.0.1:8001/mcp`.
+Écoute sur `http://127.0.0.1:8302/mcp`.
 
 ## Terminal 2 — Agent Chainlit
 
@@ -52,7 +52,7 @@ cd _sample
 uv run chainlit run main_agent.py
 ```
 
-UI disponible sur `http://localhost:8000`.
+UI disponible sur `http://localhost:8301`.
 
 ## Modèles locaux compatibles
 

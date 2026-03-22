@@ -43,8 +43,8 @@ Expose un CRUD HTTP sur les ingrédients.
 python main_api.py
 ```
 
-- Swagger UI : [http://localhost:8000/docs](http://localhost:8000/docs)
-- Base URL : `http://localhost:8000/ingredient/v1/`
+- Swagger UI : [http://localhost:8301/docs](http://localhost:8301/docs)
+- Base URL : `http://localhost:8301/ingredient/v1/`
 
 ### 2. Serveur MCP stdio
 
@@ -70,14 +70,14 @@ Configuration `mcp.json` :
 ### 3. Serveur MCP SSE
 
 Expose les outils MCP via HTTP SSE. Le serveur doit tourner avant que le client s'y connecte.  
-Tourne sur le port **8000**
+Tourne sur le port **8302**
 
 ```bash
 python main_mcp_sse.py
 ```
 
-- SSE endpoint : `http://localhost:8001/sse`
-- Messages endpoint : `http://localhost:8001/messages/`
+- SSE endpoint : `http://localhost:8302/sse`
+- Messages endpoint : `http://localhost:8302/messages/`
 
 Configuration `mcp.json` :
 
@@ -85,7 +85,7 @@ Configuration `mcp.json` :
 {
   "mcpServers": {
     "rekipe-ingredients-sse": {
-      "url": "http://localhost:8000/sse"
+      "url": "http://localhost:8302/sse"
     }
   }
 }
