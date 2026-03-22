@@ -13,7 +13,7 @@ def build_recipe_service(arclith: Arclith) -> tuple[RecipeService, Logger]:
             from adapters.output.mongodb.ingredient_repository import MongoDBIngredientRepository
             from adapters.output.mongodb.ustensil_repository import MongoDBUstensilRepository
             mongo = config.adapters.mongodb
-            mongo_config = MongoDBConfig(uri = mongo.uri, db_name = mongo.db_name)
+            mongo_config = MongoDBConfig(uri=mongo.uri, db_name=mongo.db_name)
             repo = MongoDBRecipeRepository(mongo_config, arclith.logger)
             ingredient_repo = MongoDBIngredientRepository(mongo_config, arclith.logger)
             ustensil_repo = MongoDBUstensilRepository(mongo_config, arclith.logger)
