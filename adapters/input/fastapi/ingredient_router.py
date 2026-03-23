@@ -20,14 +20,22 @@ class IngredientRouter:
     def __init__(self, service: IngredientService, logger: Logger) -> None:
         self._service = service
         self._logger = logger
-        self.router = APIRouter(prefix="/v1/ingredients", tags=["ingredients"], dependencies=[Depends(inject_tenant_uri)])
+        self.router = APIRouter(
+            prefix = "/v1/ingredients",
+            tags = ["ingredients"],
+            dependencies = [Depends(inject_tenant_uri)])
         self._register_routes()
 
     def _register_routes(self) -> None:
-        self.router.add_api_route("/", self.create_ingredient, methods = ["POST"],
-                                  response_model = IngredientCreatedSchema, status_code = 201,
-                                  summary = "Create ingredient",
-                                  response_description = "UUID of the created ingredient")
+        self.router.add_api_route(
+            methods = ["POST"],
+            path = "/",
+            summary = "Create ingredient",
+            endpoint = self.create_ingredient,
+            response_model = IngredientCreatedSchema,
+            response_description = "UUID of the created ingredient",
+            status_code = 201)
+
         self.router.add_api_route("/", self.list_ingredients, methods = ["GET"],
                                   response_model = list[IngredientSchema],
                                   summary = "List ingredients", response_description = "List of active ingredients")
