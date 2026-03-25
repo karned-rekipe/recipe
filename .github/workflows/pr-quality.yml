@@ -24,6 +24,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
+      - run: uv sync --frozen --group dev
       - run: make lint
 
   security:
@@ -35,6 +36,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
+      - run: uv sync --frozen --group dev
       - run: make security
 
   complexity:
@@ -46,6 +48,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
+      - run: uv sync --frozen --group dev
       - run: make complexity
 
   typecheck:
@@ -58,6 +61,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
+      - run: uv sync --frozen --group dev
       - run: make typecheck
 
   coverage:
@@ -69,6 +73,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
+      - run: uv sync --frozen --group dev
       - run: make coverage
 
   report:
@@ -102,4 +107,3 @@ jobs:
             } else {
               await github.rest.issues.createComment({ owner, repo, issue_number, body });
             }
-
