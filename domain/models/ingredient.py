@@ -1,8 +1,6 @@
-from typing import Optional
-
-from pydantic import Field, field_validator
-
 from arclith.domain.models.entity import Entity
+from pydantic import Field, field_validator
+from typing import Optional
 
 
 class Ingredient(Entity):
@@ -13,7 +11,7 @@ class Ingredient(Entity):
     )
 
     unit: str | None = Field(
-        None,
+        default = None,
         description="Unité de mesure associée à l'ingrédient (ex. g, kg, ml). None si non applicable.",
         examples=["g", "kg", "ml", None],
     )
