@@ -1,7 +1,7 @@
+import re
 from arclith.adapters.output.mongodb.config import MongoDBConfig
 from arclith.adapters.output.mongodb.repository import MongoDBRepository
 from arclith.domain.ports.logger import Logger
-import re
 from typing import Any
 from uuid6 import UUID
 
@@ -29,27 +29,18 @@ class MongoDBRecipeRepository(MongoDBRepository[Recipe], RecipeRepository):
 
         return doc
 
+    @staticmethod
+    def _coerce_uuids(items: list[dict], keys: list[str]) -> None:
+        for item in items:
+            for key in keys:
+                if isinstance(item.get(key), str):
+                    item[key] = UUID(item[key])
+
     def _from_doc(self, doc: dict[str, Any]) -> Recipe:
         """Convert MongoDB document to Recipe entity, deserializing nested entities."""
-        # Convert string UUIDs back to UUID objects for nested entities
-        if "steps" in doc and doc["steps"]:
-            for step in doc["steps"]:
-                if "recipe_uuid" in step and isinstance(step["recipe_uuid"], str):
-                    step["recipe_uuid"] = UUID(step["recipe_uuid"])
-                if "uuid" in step and isinstance(step["uuid"], str):
-                    step["uuid"] = UUID(step["uuid"])
-
-        if "ingredients" in doc and doc["ingredients"]:
-            for ing in doc["ingredients"]:
-                if "uuid" in ing and isinstance(ing["uuid"], str):
-                    ing["uuid"] = UUID(ing["uuid"])
-
-        if "ustensils" in doc and doc["ustensils"]:
-            for ust in doc["ustensils"]:
-                if "uuid" in ust and isinstance(ust["uuid"], str):
-                    ust["uuid"] = UUID(ust["uuid"])
-
-        # Let the parent handle the base conversion
+        self._coerce_uuids(doc.get("steps") or [], ["recipe_uuid", "uuid"])
+        self._coerce_uuids(doc.get("ingredients") or [], ["uuid"])
+        self._coerce_uuids(doc.get("ustensils") or [], ["uuid"])
         return super()._from_doc(doc)
 
     async def find_by_name(self, name: str) -> list[Recipe]:

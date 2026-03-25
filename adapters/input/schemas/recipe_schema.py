@@ -1,8 +1,7 @@
-from typing import Literal
-from uuid import UUID as StdUUID
-
 from arclith.adapters.input.schemas.base_schema import BaseSchema
 from pydantic import Field, BaseModel
+from typing import Literal
+from uuid import UUID as StdUUID
 
 from adapters.input.schemas import IngredientSchema
 from adapters.input.schemas.ingredient_schema import IngredientCreateSchema
@@ -32,11 +31,26 @@ class RecipeCreateSchema(BaseModel):
         examples=["A", "B", "C", "D", "E", "F"])
 
 
-class RecipePatchSchema(RecipeCreateSchema):
+class RecipePatchSchema(BaseModel):
     name: str | None = Field(
         None,
         description="Nom de la recette.",
         examples=["Pizza", "Salade"])
+    description: str | None = Field(
+        None,
+        description = "Description détaillée de la recette. None si non applicable.",
+        examples = ["Recette de pizza", "Recette de salade"])
+    ingredients: list[IngredientCreateSchema] | None = Field(
+        None,
+        description = "Liste des ingrédients nécessaires pour la recette. None si non applicable.")
+    ustensils: list[UstensilCreateSchema] | None = Field(
+        None,
+        description = "Liste des ustensiles nécessaires pour la recette.")
+    steps: list[StepCreateSchema] | None = Field(None, description = "Liste des étapes nécessaires pour la recette.")
+    nutriscore: Literal["A", "B", "C", "D", "E", "F"] | None = Field(
+        None,
+        description = "Nutriscore de la recette. None si non applicable.",
+        examples = ["A", "B", "C", "D", "E", "F"])
 
 
 class RecipeUpdateSchema(RecipeCreateSchema):

@@ -1,7 +1,5 @@
-from pydantic import BaseModel, Field
-from typing import Optional
-
 from arclith.adapters.input.schemas.base_schema import BaseSchema
+from pydantic import BaseModel, Field
 from uuid import UUID as StdUUID
 
 

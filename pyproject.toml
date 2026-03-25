@@ -17,12 +17,15 @@ dependencies = [
 explicit_package_bases = true
 
 [tool.coverage.run]
+source = ["domain", "adapters", "application", "infrastructure"]
+branch = true
 omit = [
     "main_*.py",
-    "__init__.py",
+    "**/__init__.py",
 ]
 
 [tool.coverage.report]
+fail_under = 80
 exclude_lines = [
     "if __name__ == .__main__.:",
 ]
@@ -30,6 +33,7 @@ exclude_lines = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = ["."]
 
 [tool.hatch.build.targets.wheel]
 packages = [

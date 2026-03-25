@@ -1,9 +1,8 @@
-from typing import Annotated
-from uuid import UUID as StdUUID
-
 import fastmcp
 from arclith.domain.ports.logger import Logger
 from pydantic import Field
+from typing import Annotated
+from uuid import UUID as StdUUID
 from uuid6 import UUID
 
 from adapters.input.fastmcp.dependencies import inject_tenant_uri
@@ -41,7 +40,7 @@ class StepMCP:
                                                          examples = [
                                                              "Mélanger la farine, l'eau et la levure pendant 10 min.",
                                                              None])] = None,
-            ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> dict:
             """Create a new step linked to a recipe.
 
@@ -59,7 +58,7 @@ class StepMCP:
         async def get_step(
                 uuid: Annotated[str, Field(description = "UUID (UUIDv7) de l'étape à récupérer.",
                                            examples = ["01951234-5678-7abc-def0-123456789abc"])],
-            ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> dict | None:
             """Get a step by its UUID.
 
@@ -82,7 +81,7 @@ class StepMCP:
                 description: Annotated[str | None, Field(default = None,
                                                          description = "Nouvelle description détaillée. Passer null pour la supprimer.",
                                                          examples = ["Mélanger la farine et l'eau.", None])] = None,
-            ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> dict | None:
             """Update name and description of an existing step.
 
@@ -102,7 +101,7 @@ class StepMCP:
         async def delete_step(
                 uuid: Annotated[str, Field(description = "UUID (UUIDv7) de l'étape à supprimer.",
                                            examples = ["01951234-5678-7abc-def0-123456789abc"])],
-            ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> None:
             """Soft-delete a step.
 
@@ -117,7 +116,7 @@ class StepMCP:
                 name: Annotated[str | None, Field(default = None,
                                                   description = "Filtre optionnel : recherche partielle sur le nom, insensible à la casse.",
                                                   examples = ["pâte", None])] = None,
-            ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> list[dict]:
             """List all active steps across all recipes, optionally filtered by name.
 
@@ -132,7 +131,7 @@ class StepMCP:
         async def duplicate_step(
                 uuid: Annotated[str, Field(description = "UUID (UUIDv7) de l'étape à dupliquer.",
                                            examples = ["01951234-5678-7abc-def0-123456789abc"])],
-            ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> dict:
             """Duplicate a step, assigning it a new UUID.
 
@@ -148,7 +147,7 @@ class StepMCP:
                 recipe_uuid: Annotated[
                     str, Field(description = "UUID (UUIDv7) de la recette dont on veut récupérer les étapes.",
                                examples = ["01951234-5678-7abc-def0-123456789abc"])],
-                ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> list[dict]:
             """List all steps belonging to a specific recipe.
 
@@ -160,7 +159,7 @@ class StepMCP:
             return [StepSchema.model_validate(i).model_dump() for i in items]
 
         @self._mcp.tool
-        async def purge_steps(ctx: fastmcp.Context = None) -> dict:
+        async def purge_steps(ctx: fastmcp.Context | None = None) -> dict:
             """Permanently delete soft-deleted steps that have exceeded the retention period.
 
             Returns {"purged": <count>} with the number of permanently deleted records.

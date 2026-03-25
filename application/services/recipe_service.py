@@ -24,11 +24,14 @@ class RecipeService(BaseService[Recipe]):
             retention_days: float | None = None,
     ) -> None:
         super().__init__(repository, logger, retention_days)
-        self._find_by_name_uc = FindByNameUseCase(repository, logger)
-        self._link_ingredient_uc = LinkIngredientToRecipeUseCase(repository, ingredient_repo, logger)
-        self._unlink_ingredient_uc = UnlinkIngredientFromRecipeUseCase(repository, logger)
-        self._link_ustensil_uc = LinkUstensilToRecipeUseCase(repository, ustensil_repo, logger)
-        self._unlink_ustensil_uc = UnlinkUstensilFromRecipeUseCase(repository, logger)
+        self._find_by_name_uc: FindByNameUseCase[Recipe] = FindByNameUseCase(repository, logger)
+        self._link_ingredient_uc: LinkIngredientToRecipeUseCase = LinkIngredientToRecipeUseCase(repository,
+                                                                                                ingredient_repo, logger)
+        self._unlink_ingredient_uc: UnlinkIngredientFromRecipeUseCase = UnlinkIngredientFromRecipeUseCase(repository,
+                                                                                                          logger)
+        self._link_ustensil_uc: LinkUstensilToRecipeUseCase = LinkUstensilToRecipeUseCase(repository, ustensil_repo,
+                                                                                          logger)
+        self._unlink_ustensil_uc: UnlinkUstensilFromRecipeUseCase = UnlinkUstensilFromRecipeUseCase(repository, logger)
 
     async def find_by_name(self, name: str) -> list[Recipe]:
         return await self._find_by_name_uc.execute(name)

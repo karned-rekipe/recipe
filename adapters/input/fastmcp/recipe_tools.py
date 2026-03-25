@@ -1,9 +1,8 @@
-from typing import Annotated, Literal
-from uuid import UUID as StdUUID
-
 import fastmcp
 from arclith.domain.ports.logger import Logger
 from pydantic import Field
+from typing import Annotated, Literal
+from uuid import UUID as StdUUID
 from uuid6 import UUID
 
 from adapters.input.fastmcp.dependencies import inject_tenant_uri
@@ -42,7 +41,7 @@ class RecipeMCP:
                                                                                           description = "Nutriscore de la recette (A = meilleur, F = moins bon). Omettre si inconnu.",
                                                                                           examples = ["A", "B",
                                                                                                       None])] = None,
-            ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> dict:
             """Create a new recipe (name, description, nutriscore).
 
@@ -63,7 +62,7 @@ class RecipeMCP:
         async def get_recipe(
                 uuid: Annotated[str, Field(description = "UUID (UUIDv7) de la recette à récupérer.",
                                            examples = ["01951234-5678-7abc-def0-123456789abc"])],
-            ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> dict | None:
             """Get a recipe by its UUID.
 
@@ -92,7 +91,7 @@ class RecipeMCP:
                                                                                           description = "Nouveau nutriscore. Passer null pour le supprimer.",
                                                                                           examples = ["B",
                                                                                                       None])] = None,
-            ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> dict:
             """Update name, description and nutriscore of a recipe.
 
@@ -112,7 +111,7 @@ class RecipeMCP:
         async def delete_recipe(
                 uuid: Annotated[str, Field(description = "UUID (UUIDv7) de la recette à supprimer.",
                                            examples = ["01951234-5678-7abc-def0-123456789abc"])],
-            ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> None:
             """Soft-delete a recipe.
 
@@ -128,7 +127,7 @@ class RecipeMCP:
                 name: Annotated[str | None, Field(default = None,
                                                   description = "Filtre optionnel : recherche partielle sur le nom, insensible à la casse. Ex: 'pizza' retournera toutes les recettes dont le nom contient 'pizza'.",
                                                   examples = ["pizza", None])] = None,
-            ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> list[dict]:
             """List all active (non-deleted) recipes.
 
@@ -149,7 +148,7 @@ class RecipeMCP:
         async def duplicate_recipe(
                 uuid: Annotated[str, Field(description = "UUID (UUIDv7) de la recette à dupliquer.",
                                            examples = ["01951234-5678-7abc-def0-123456789abc"])],
-            ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> dict:
             """Duplicate a recipe, assigning it a new UUID.
 
@@ -161,7 +160,7 @@ class RecipeMCP:
             return RecipeSchema.model_validate(result).model_dump()
 
         @self._mcp.tool
-        async def purge_recipes(ctx: fastmcp.Context = None) -> dict:
+        async def purge_recipes(ctx: fastmcp.Context | None = None) -> dict:
             """Permanently delete soft-deleted recipes that have exceeded the retention period.
 
             Returns {"purged": <count>} with the number of permanently deleted records.
