@@ -3,14 +3,28 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "rekipe-sample"
+name = "rekipe-recipe"
 version = "0.1.0"
-description = "Sample CRUD — built on arclith"
+description = "Service REST+MCP production — Ingredient, Recipe, Step, Ustensil"
 requires-python = ">=3.13"
 dependencies = [
-    "arclith[mongodb,fastapi,mcp,duckdb]>=0.2.0",
+    "arclith[mongodb,fastapi,mcp,duckdb,vault]>=0.3.0",
     "pydantic-ai[openai]>=0.2.0",
     "chainlit>=2.0.0",
+]
+
+[tool.mypy]
+explicit_package_bases = true
+
+[tool.coverage.run]
+omit = [
+    "main_*.py",
+    "__init__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "if __name__ == .__main__.:",
 ]
 
 [tool.pytest.ini_options]
@@ -27,8 +41,12 @@ packages = [
 
 [dependency-groups]
 dev = [
-    "pytest>=9.0.2",
-    "pytest-asyncio>=1.3.0",
+    "pytest==9.0.2",
+    "pytest-asyncio==1.3.0",
+    "pytest-cov==7.0.0",
+    "ruff==0.15.6",
+    "mypy==1.19.1",
+    "bandit==1.8.3",
+    "radon>=6.0",
+    "types-PyYAML>=6.0",
 ]
-
-
