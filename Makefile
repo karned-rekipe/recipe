@@ -1,17 +1,17 @@
-.PHONY: lint typecheck security complexity test test-unit test-e2e coverage quality precommit setup
+.PHONY: lint typecheck security complexity test test-unit test-e2e coverage quality precommit
 
 SRC := domain adapters application infrastructure
 UV  := uv run --frozen
 
-setup:
-	git config core.hooksPath .githooks
-
 lint:
 	$(UV) ruff check .
+
 
 typecheck:
 	$(UV) mypy .
 
+typecheck:
+	$(UV) mypy .
 security:
 	$(UV) bandit -r $(SRC) -ll
 
