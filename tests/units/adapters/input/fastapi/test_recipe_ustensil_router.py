@@ -2,7 +2,7 @@ import asyncio
 import pytest
 from fastapi.testclient import TestClient
 
-from adapters.input.fastapi.recipe_ustensil_router import RecipeUstensilRouter
+from adapters.input.fastapi.routers.recipe_ustensil_router import RecipeUstensilRouter
 from domain.models.recipe import Recipe
 from domain.models.ustensil import Ustensil
 from tests.units.adapters.input.fastapi.helpers import make_test_app

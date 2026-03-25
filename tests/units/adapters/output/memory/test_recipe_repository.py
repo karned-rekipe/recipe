@@ -1,6 +1,6 @@
 import pytest
 
-from adapters.output.memory.recipe_repository import InMemoryRecipeRepository
+from adapters.output.memory.repositories.recipe_repository import InMemoryRecipeRepository
 from domain.models.recipe import Recipe
 
 

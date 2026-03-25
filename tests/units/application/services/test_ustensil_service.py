@@ -1,7 +1,7 @@
 import pytest
 from uuid6 import uuid7
 
-from adapters.output.memory.ustensil_repository import InMemoryUstensilRepository
+from adapters.output.memory.repositories.ustensil_repository import InMemoryUstensilRepository
 from application.services.ustensil_service import UstensilService
 from domain.models.ustensil import Ustensil
 from tests.units.conftest import NullLogger

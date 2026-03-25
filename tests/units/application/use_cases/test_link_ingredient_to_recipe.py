@@ -1,8 +1,8 @@
 import pytest
 from uuid6 import uuid7
 
-from adapters.output.memory.ingredient_repository import InMemoryIngredientRepository
-from adapters.output.memory.recipe_repository import InMemoryRecipeRepository
+from adapters.output.memory.repositories.ingredient_repository import InMemoryIngredientRepository
+from adapters.output.memory.repositories.recipe_repository import InMemoryRecipeRepository
 from application.use_cases.link_ingredient_to_recipe import LinkIngredientToRecipeUseCase
 from domain.models.ingredient import Ingredient
 from domain.models.recipe import Recipe

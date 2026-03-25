@@ -3,16 +3,16 @@ import pytest
 from arclith.domain.ports.logger import Logger, LogLevel
 from typing import Any
 
-from adapters.input.fastmcp.ingredient_tools import IngredientMCP
-from adapters.input.fastmcp.recipe_ingredient_tools import RecipeIngredientMCP
-from adapters.input.fastmcp.recipe_tools import RecipeMCP
-from adapters.input.fastmcp.recipe_ustensil_tools import RecipeUstensilMCP
-from adapters.input.fastmcp.step_tools import StepMCP
-from adapters.input.fastmcp.ustensil_tools import UstensilMCP
-from adapters.output.memory.ingredient_repository import InMemoryIngredientRepository
-from adapters.output.memory.recipe_repository import InMemoryRecipeRepository
-from adapters.output.memory.step_repository import InMemoryStepRepository
-from adapters.output.memory.ustensil_repository import InMemoryUstensilRepository
+from adapters.input.fastmcp.tools.ingredient_tools import IngredientMCP
+from adapters.input.fastmcp.tools.recipe_ingredient_tools import RecipeIngredientMCP
+from adapters.input.fastmcp.tools.recipe_tools import RecipeMCP
+from adapters.input.fastmcp.tools.recipe_ustensil_tools import RecipeUstensilMCP
+from adapters.input.fastmcp.tools.step_tools import StepMCP
+from adapters.input.fastmcp.tools.ustensil_tools import UstensilMCP
+from adapters.output.memory.repositories.ingredient_repository import InMemoryIngredientRepository
+from adapters.output.memory.repositories.recipe_repository import InMemoryRecipeRepository
+from adapters.output.memory.repositories.step_repository import InMemoryStepRepository
+from adapters.output.memory.repositories.ustensil_repository import InMemoryUstensilRepository
 from application.services.ingredient_service import IngredientService
 from application.services.recipe_service import RecipeService
 from application.services.step_service import StepService

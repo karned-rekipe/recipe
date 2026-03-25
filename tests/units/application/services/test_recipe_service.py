@@ -1,9 +1,9 @@
 import pytest
 from uuid6 import uuid7
 
-from adapters.output.memory.ingredient_repository import InMemoryIngredientRepository
-from adapters.output.memory.recipe_repository import InMemoryRecipeRepository
-from adapters.output.memory.ustensil_repository import InMemoryUstensilRepository
+from adapters.output.memory.repositories.ingredient_repository import InMemoryIngredientRepository
+from adapters.output.memory.repositories.recipe_repository import InMemoryRecipeRepository
+from adapters.output.memory.repositories.ustensil_repository import InMemoryUstensilRepository
 from application.services.recipe_service import RecipeService
 from domain.models.ingredient import Ingredient
 from domain.models.recipe import Recipe

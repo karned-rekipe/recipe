@@ -2,7 +2,7 @@ import asyncio
 import pytest
 from fastapi.testclient import TestClient
 
-from adapters.input.fastapi.step_router import StepRouter
+from adapters.input.fastapi.routers.step_router import StepRouter
 from domain.models.recipe import Recipe
 from tests.units.adapters.input.fastapi.helpers import make_test_app
 

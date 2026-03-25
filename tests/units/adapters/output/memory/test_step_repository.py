@@ -2,7 +2,7 @@ import pytest
 from datetime import datetime, timezone
 from uuid6 import uuid7
 
-from adapters.output.memory.step_repository import InMemoryStepRepository
+from adapters.output.memory.repositories.step_repository import InMemoryStepRepository
 from domain.models.step import Step
 
 

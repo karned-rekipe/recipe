@@ -1,8 +1,8 @@
 import pytest
 from uuid6 import uuid7
 
-from adapters.output.memory.recipe_repository import InMemoryRecipeRepository
-from adapters.output.memory.ustensil_repository import InMemoryUstensilRepository
+from adapters.output.memory.repositories.recipe_repository import InMemoryRecipeRepository
+from adapters.output.memory.repositories.ustensil_repository import InMemoryUstensilRepository
 from application.use_cases.link_ustensil_to_recipe import LinkUstensilToRecipeUseCase
 from domain.models.recipe import Recipe
 from domain.models.ustensil import Ustensil

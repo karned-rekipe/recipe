@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from adapters.input.fastapi.ustensil_router import UstensilRouter
+from adapters.input.fastapi.routers.ustensil_router import UstensilRouter
 from tests.units.adapters.input.fastapi.helpers import make_test_app
 
 

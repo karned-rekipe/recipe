@@ -1,6 +1,6 @@
 import pytest
 
-from adapters.output.memory.ustensil_repository import InMemoryUstensilRepository
+from adapters.output.memory.repositories.ustensil_repository import InMemoryUstensilRepository
 from domain.models.ustensil import Ustensil
 
 

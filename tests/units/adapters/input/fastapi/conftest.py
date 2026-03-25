@@ -4,10 +4,10 @@ from fastapi import FastAPI
 from typing import Any
 
 from adapters.input.fastapi.dependencies import inject_tenant_uri
-from adapters.output.memory.ingredient_repository import InMemoryIngredientRepository
-from adapters.output.memory.recipe_repository import InMemoryRecipeRepository
-from adapters.output.memory.step_repository import InMemoryStepRepository
-from adapters.output.memory.ustensil_repository import InMemoryUstensilRepository
+from adapters.output.memory.repositories.ingredient_repository import InMemoryIngredientRepository
+from adapters.output.memory.repositories.recipe_repository import InMemoryRecipeRepository
+from adapters.output.memory.repositories.step_repository import InMemoryStepRepository
+from adapters.output.memory.repositories.ustensil_repository import InMemoryUstensilRepository
 from application.services.ingredient_service import IngredientService
 from application.services.recipe_service import RecipeService
 from application.services.step_service import StepService
