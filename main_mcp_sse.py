@@ -1,7 +1,8 @@
 from pathlib import Path
 
 from arclith import Arclith
-from adapters.input.fastmcp.tools import register_tools
+
+from adapters.input.fastmcp.register import register_tools
 
 arclith = Arclith(Path(__file__).parent / "config.yaml")
 mcp = arclith.fastmcp("Rekipe")

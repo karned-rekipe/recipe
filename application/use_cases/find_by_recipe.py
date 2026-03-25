@@ -1,9 +1,8 @@
+from arclith.domain.ports.logger import Logger
 from uuid6 import UUID
 
-from arclith.domain.ports.logger import Logger
-
 from domain.models.step import Step
-from domain.ports.step_repository import StepRepository
+from domain.ports.output.step_repository import StepRepository
 
 
 class FindByRecipeUseCase:

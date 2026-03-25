@@ -3,7 +3,7 @@ from uuid6 import UUID
 
 from application.use_cases import FindByNameUseCase, FindByRecipeUseCase
 from domain.models.step import Step
-from domain.ports.step_repository import StepRepository
+from domain.ports.output.step_repository import StepRepository
 
 
 class StepService(BaseService[Step]):

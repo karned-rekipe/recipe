@@ -9,9 +9,9 @@ from application.use_cases import (
     UnlinkUstensilFromRecipeUseCase,
 )
 from domain.models.recipe import Recipe
-from domain.ports.ingredient_repository import IngredientRepository
-from domain.ports.recipe_repository import RecipeRepository
-from domain.ports.ustensil_repository import UstensilRepository
+from domain.ports.output.ingredient_repository import IngredientRepository
+from domain.ports.output.recipe_repository import RecipeRepository
+from domain.ports.output.ustensil_repository import UstensilRepository
 
 
 class RecipeService(BaseService[Recipe]):

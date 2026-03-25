@@ -2,7 +2,7 @@ from arclith import BaseService, Logger
 
 from application.use_cases import FindByNameUseCase
 from domain.models.ustensil import Ustensil
-from domain.ports.ustensil_repository import UstensilRepository
+from domain.ports.output.ustensil_repository import UstensilRepository
 
 
 class UstensilService(BaseService[Ustensil]):

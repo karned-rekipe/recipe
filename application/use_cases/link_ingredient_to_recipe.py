@@ -2,8 +2,8 @@ from arclith.domain.ports.logger import Logger
 from uuid6 import UUID
 
 from domain.models.recipe import Recipe
-from domain.ports.ingredient_repository import IngredientRepository
-from domain.ports.recipe_repository import RecipeRepository
+from domain.ports.output.ingredient_repository import IngredientRepository
+from domain.ports.output.recipe_repository import RecipeRepository
 
 
 class LinkIngredientToRecipeUseCase:

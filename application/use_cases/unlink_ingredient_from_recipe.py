@@ -1,7 +1,7 @@
 from arclith.domain.ports.logger import Logger
 from uuid6 import UUID
 
-from domain.ports.recipe_repository import RecipeRepository
+from domain.ports.output.recipe_repository import RecipeRepository
 
 
 class UnlinkIngredientFromRecipeUseCase:
