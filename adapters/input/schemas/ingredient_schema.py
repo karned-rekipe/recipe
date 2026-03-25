@@ -1,8 +1,6 @@
-from uuid import UUID as StdUUID
-
-from pydantic import Field, BaseModel
-
 from arclith.adapters.input.schemas.base_schema import BaseSchema
+from pydantic import Field, BaseModel
+from uuid import UUID as StdUUID
 
 
 class IngredientCreateSchema(BaseModel):
@@ -21,12 +19,18 @@ class IngredientCreateSchema(BaseModel):
     )
 
 
-class IngredientPatchSchema(IngredientCreateSchema):
+class IngredientPatchSchema(BaseModel):
     name: str | None = Field(
         None,
         min_length=1,
         description="Nouveau nom de l'ingrédient. Ignoré si absent.",
         examples=["Farine complète", None]
+    )
+    unit: str | None = Field(
+        None,
+        min_length = 1,
+        description = "Nouvelle unité de mesure. Ignorée si absente.",
+        examples = ["g", "kg", "ml", None]
     )
 
 

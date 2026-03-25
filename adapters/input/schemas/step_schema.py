@@ -1,8 +1,6 @@
-from uuid import UUID as StdUUID
-
-from pydantic import Field, BaseModel
-
 from arclith.adapters.input.schemas.base_schema import BaseSchema
+from pydantic import Field, BaseModel
+from uuid import UUID as StdUUID
 
 
 class StepCreateSchema(BaseModel):
@@ -22,11 +20,19 @@ class StepCreateSchema(BaseModel):
     )
 
 
-class StepPatchSchema(StepCreateSchema):
+class StepPatchSchema(BaseModel):
     name: str | None = Field(
         None,
         description="Nouveau nom de l'étape. Ignoré si absent.",
         examples=["Cuisson au four", None]
+    )
+    description: str | None = Field(
+        None,
+        description = "Nouvelle description de l'étape. Ignorée si absente.",
+        examples = [
+            "Mélanger la farine, l'eau et la levure pour préparer la pâte.",
+            None,
+        ],
     )
 
 

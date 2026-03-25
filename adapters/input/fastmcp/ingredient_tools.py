@@ -1,9 +1,8 @@
-from typing import Annotated
-from uuid import UUID as StdUUID
-
 import fastmcp
 from arclith.domain.ports.logger import Logger
 from pydantic import Field
+from typing import Annotated
+from uuid import UUID as StdUUID
 from uuid6 import UUID
 
 from adapters.input.fastmcp.dependencies import inject_tenant_uri
@@ -36,7 +35,7 @@ class IngredientMCP:
                 unit: Annotated[str | None, Field(default = None,
                                                   description = "Unité de mesure associée (ex. 'g', 'kg', 'ml', 'cl'). Omettre si non applicable.",
                                                   examples = ["g", "kg", "ml", None])] = None,
-            ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> dict:
             """Create a new reusable ingredient.
 
@@ -52,7 +51,7 @@ class IngredientMCP:
         async def get_ingredient(
                 uuid: Annotated[str, Field(description = "UUID (UUIDv7) de l'ingrédient à récupérer.",
                                            examples = ["01951234-5678-7abc-def0-123456789abc"])],
-            ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> dict | None:
             """Get an ingredient by its UUID.
 
@@ -75,7 +74,7 @@ class IngredientMCP:
                 unit: Annotated[str | None, Field(default = None,
                                                   description = "Nouvelle unité de mesure. Passer null pour la supprimer.",
                                                   examples = ["g", None])] = None,
-            ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> dict:
             """Replace name and unit of an existing ingredient.
 
@@ -91,7 +90,7 @@ class IngredientMCP:
         async def delete_ingredient(
                 uuid: Annotated[str, Field(description = "UUID (UUIDv7) de l'ingrédient à supprimer.",
                                            examples = ["01951234-5678-7abc-def0-123456789abc"])],
-            ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> None:
             """Soft-delete an ingredient.
 
@@ -107,7 +106,7 @@ class IngredientMCP:
                 name: Annotated[str | None, Field(default = None,
                                                   description = "Filtre optionnel : recherche partielle sur le nom, insensible à la casse. Ex: 'far' retournera 'Farine de blé'.",
                                                   examples = ["farine", None])] = None,
-            ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> list[dict]:
             """List all active (non-deleted) ingredients.
 
@@ -123,7 +122,7 @@ class IngredientMCP:
         async def duplicate_ingredient(
                 uuid: Annotated[str, Field(description = "UUID (UUIDv7) de l'ingrédient à dupliquer.",
                                            examples = ["01951234-5678-7abc-def0-123456789abc"])],
-            ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> dict:
             """Duplicate an ingredient, assigning it a new UUID.
 
@@ -135,7 +134,7 @@ class IngredientMCP:
             return IngredientSchema.model_validate(result).model_dump()
 
         @self._mcp.tool
-        async def purge_ingredients(ctx: fastmcp.Context = None) -> dict:
+        async def purge_ingredients(ctx: fastmcp.Context | None = None) -> dict:
             """Permanently delete soft-deleted ingredients that have exceeded the retention period.
 
             Returns {"purged": <count>} with the number of permanently deleted records.

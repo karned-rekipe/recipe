@@ -1,9 +1,8 @@
-from typing import Annotated
-from uuid import UUID as StdUUID
-
 import fastmcp
 from arclith.domain.ports.logger import Logger
 from pydantic import Field
+from typing import Annotated
+from uuid import UUID as StdUUID
 from uuid6 import UUID
 
 from adapters.input.fastmcp.dependencies import inject_tenant_uri
@@ -33,7 +32,7 @@ class UstensilMCP:
                 name: Annotated[str, Field(
                     description = "Nom de l'ustensile (ex. 'Fouet', 'Spatule', 'Casserole 20cm'). Sera normalisé (espaces rognés).",
                     examples = ["Fouet", "Spatule"])],
-            ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> dict:
             """Create a new reusable ustensil.
 
@@ -49,7 +48,7 @@ class UstensilMCP:
         async def get_ustensil(
                 uuid: Annotated[str, Field(description = "UUID (UUIDv7) de l'ustensile à récupérer.",
                                            examples = ["01951234-5678-7abc-def0-123456789abc"])],
-            ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> dict | None:
             """Get an ustensil by its UUID.
 
@@ -69,7 +68,7 @@ class UstensilMCP:
                                            examples = ["01951234-5678-7abc-def0-123456789abc"])],
                 name: Annotated[str, Field(description = "Nouveau nom de l'ustensile.",
                                            examples = ["Fouet électrique", "Grande spatule"])],
-            ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> dict:
             """Replace the name of an existing ustensil.
 
@@ -84,7 +83,7 @@ class UstensilMCP:
         async def delete_ustensil(
                 uuid: Annotated[str, Field(description = "UUID (UUIDv7) de l'ustensile à supprimer.",
                                            examples = ["01951234-5678-7abc-def0-123456789abc"])],
-            ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> None:
             """Soft-delete an ustensil.
 
@@ -100,7 +99,7 @@ class UstensilMCP:
                 name: Annotated[str | None, Field(default = None,
                                                   description = "Filtre optionnel : recherche partielle sur le nom, insensible à la casse. Ex: 'fou' retournera 'Fouet'.",
                                                   examples = ["fouet", None])] = None,
-            ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> list[dict]:
             """List all active (non-deleted) ustensils.
 
@@ -116,7 +115,7 @@ class UstensilMCP:
         async def duplicate_ustensil(
                 uuid: Annotated[str, Field(description = "UUID (UUIDv7) de l'ustensile à dupliquer.",
                                            examples = ["01951234-5678-7abc-def0-123456789abc"])],
-            ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> dict:
             """Duplicate an ustensil, assigning it a new UUID.
 
@@ -128,7 +127,7 @@ class UstensilMCP:
             return UstensilSchema.model_validate(result).model_dump()
 
         @self._mcp.tool
-        async def purge_ustensils(ctx: fastmcp.Context = None) -> dict:
+        async def purge_ustensils(ctx: fastmcp.Context | None = None) -> dict:
             """Permanently delete soft-deleted ustensils that have exceeded the retention period.
 
             Returns {"purged": <count>} with the number of permanently deleted records.

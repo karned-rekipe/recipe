@@ -1,9 +1,8 @@
-from typing import Annotated
-from uuid import UUID as StdUUID
-
 import fastmcp
 from arclith.domain.ports.logger import Logger
 from pydantic import Field
+from typing import Annotated
+from uuid import UUID as StdUUID
 from uuid6 import UUID
 
 from adapters.input.fastmcp.dependencies import inject_tenant_uri
@@ -35,7 +34,7 @@ class RecipeUstensilMCP:
                 ustensil_uuid: Annotated[str, Field(
                     description = "UUID (UUIDv7) de l'ustensile existant à lier. L'ustensile doit avoir été créé via `create_ustensil`.",
                     examples = ["01951234-5678-7abc-def0-123456789abc"])],
-                ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> dict:
             """Link an existing ustensil to a recipe.
 
@@ -64,7 +63,7 @@ class RecipeUstensilMCP:
                 ustensil_uuid: Annotated[
                     str, Field(description = "UUID (UUIDv7) de l'ustensile à délier de la recette.",
                                examples = ["01951234-5678-7abc-def0-123456789abc"])],
-                ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> None:
             """Unlink an ustensil from a recipe.
 
@@ -84,7 +83,7 @@ class RecipeUstensilMCP:
                 recipe_uuid: Annotated[
                     str, Field(description = "UUID (UUIDv7) de la recette dont on veut lister les ustensiles.",
                                examples = ["01951234-5678-7abc-def0-123456789abc"])],
-                ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> list[dict]:
             """List all ustensils currently linked to a recipe.
 

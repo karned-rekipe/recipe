@@ -1,9 +1,8 @@
-from typing import Annotated
-from uuid import UUID as StdUUID
-
 import fastmcp
 from arclith.domain.ports.logger import Logger
 from pydantic import Field
+from typing import Annotated
+from uuid import UUID as StdUUID
 from uuid6 import UUID
 
 from adapters.input.fastmcp.dependencies import inject_tenant_uri
@@ -35,7 +34,7 @@ class RecipeIngredientMCP:
                 ingredient_uuid: Annotated[str, Field(
                     description = "UUID (UUIDv7) de l'ingrédient existant à lier. L'ingrédient doit avoir été créé via `create_ingredient`.",
                     examples = ["01951234-5678-7abc-def0-123456789abc"])],
-                ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> dict:
             """Link an existing ingredient to a recipe.
 
@@ -64,7 +63,7 @@ class RecipeIngredientMCP:
                 ingredient_uuid: Annotated[
                     str, Field(description = "UUID (UUIDv7) de l'ingrédient à délier de la recette.",
                                examples = ["01951234-5678-7abc-def0-123456789abc"])],
-                ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> None:
             """Unlink an ingredient from a recipe.
 
@@ -84,7 +83,7 @@ class RecipeIngredientMCP:
                 recipe_uuid: Annotated[
                     str, Field(description = "UUID (UUIDv7) de la recette dont on veut lister les ingrédients.",
                                examples = ["01951234-5678-7abc-def0-123456789abc"])],
-                ctx: fastmcp.Context = None,
+                ctx: fastmcp.Context | None = None,
         ) -> list[dict]:
             """List all ingredients currently linked to a recipe.
 
