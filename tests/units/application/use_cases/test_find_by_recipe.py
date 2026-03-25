@@ -24,8 +24,8 @@ def use_case(step_repo, logger):
 
 async def test_find_by_recipe_returns_steps(use_case, step_repo):
     rid = uuid7()
-    s1 = await step_repo.create(Step(name = "Pétrir", recipe_uuid = rid))
-    s2 = await step_repo.create(Step(name = "Cuire", recipe_uuid = rid))
+    await step_repo.create(Step(name = "Pétrir", recipe_uuid = rid))
+    await step_repo.create(Step(name = "Cuire", recipe_uuid = rid))
     result = await use_case.execute(rid)
     assert len(result) == 2
 
