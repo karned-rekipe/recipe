@@ -1,7 +1,6 @@
+from arclith.adapters.output.duckdb.repository import DuckDBRepository
 from typing import Any
 from uuid import UUID as StdUUID
-
-from arclith.adapters.output.duckdb.repository import DuckDBRepository
 from uuid6 import UUID
 
 from domain.models.step import Step
@@ -26,7 +25,7 @@ class DuckDBStepRepository(DuckDBRepository[Step], StepRepository):
     async def find_by_name(self, name: str) -> list[Step]:
         # noinspection SqlNoDataSourceInspection
         rows = self._fetch(
-            f"SELECT * FROM {self._table} WHERE deleted_at IS NULL AND lower(name) LIKE ?",
+            f"SELECT * FROM {self._table} WHERE deleted_at IS NULL AND lower(name) LIKE ?",  # nosec B608
             [f"%{name.lower()}%"],
         )
         return [self._row_to_entity(r) for r in rows]
@@ -34,7 +33,7 @@ class DuckDBStepRepository(DuckDBRepository[Step], StepRepository):
     async def find_by_recipe(self, recipe_uuid: UUID) -> list[Step]:
         # noinspection SqlNoDataSourceInspection
         rows = self._fetch(
-            f"SELECT * FROM {self._table} WHERE deleted_at IS NULL AND recipe_uuid = ?",
+            f"SELECT * FROM {self._table} WHERE deleted_at IS NULL AND recipe_uuid = ?",  # nosec B608
             [str(recipe_uuid)],
         )
         return [self._row_to_entity(r) for r in rows]

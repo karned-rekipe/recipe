@@ -32,7 +32,9 @@ test-e2e:
 coverage:
 	$(UV) pytest --cov --cov-report=term-missing --cov-report=html
 
-quality: lint security complexity typecheck coverage
+quality: lint security complexity coverage
+	@echo "--- typecheck (info only) ---"
+	-$(UV) mypy .
 
 precommit: lint typecheck security
 

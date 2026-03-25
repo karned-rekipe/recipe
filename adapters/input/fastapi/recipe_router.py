@@ -1,8 +1,7 @@
-from typing import Annotated
-from uuid import UUID as StdUUID
-
 from arclith.domain.ports.logger import Logger
 from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Annotated
+from uuid import UUID as StdUUID
 from uuid6 import UUID
 
 from adapters.input.fastapi.dependencies import inject_tenant_uri
@@ -195,7 +194,10 @@ class RecipeRouter:
             self._logger.warning("⚠️ Recipe not found for patching via HTTP", uuid=str(uuid))
             raise HTTPException(status_code=404, detail="Recipe not found")
 
-        updated_recipe = Recipe(
+        await self._service.update(self._apply_patch(uuid, existing, payload))
+
+    def _apply_patch(self, uuid: StdUUID, existing: Recipe, payload: RecipePatchSchema) -> Recipe:
+        return Recipe(
             uuid=self._to_uuid6(uuid),
             name=payload.name if payload.name is not None else existing.name,
             description=payload.description if payload.description is not None else existing.description,
@@ -213,7 +215,6 @@ class RecipeRouter:
             ] if payload.steps is not None else existing.steps,
             nutriscore=payload.nutriscore if payload.nutriscore is not None else existing.nutriscore
         )
-        await self._service.update(updated_recipe)
 
 
     async def delete_recipe(self, uuid: StdUUID) -> None:

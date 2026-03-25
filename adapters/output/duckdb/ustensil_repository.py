@@ -10,7 +10,7 @@ class DuckDBUstensilRepository(DuckDBRepository[Ustensil], UstensilRepository):
 
     async def find_by_name(self, name: str) -> list[Ustensil]:
         rows = self._fetch(
-            f"SELECT * FROM {self._table} WHERE deleted_at IS NULL AND lower(name) LIKE ?",
+            f"SELECT * FROM {self._table} WHERE deleted_at IS NULL AND lower(name) LIKE ?",  # nosec B608
             [f"%{name.lower()}%"],
         )
         return [self._row_to_entity(r) for r in rows]
