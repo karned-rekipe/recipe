@@ -1,3 +1,4 @@
+from arclith.adapters.input.schemas import ApiResponse, success_response
 from arclith.domain.ports.logger import Logger
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Annotated
@@ -22,8 +23,11 @@ class StepRouter:
         self._service = service
         self._recipe_service = recipe_service
         self._logger = logger
-        self.router = APIRouter(prefix = "/v1/recipes/{uuid}/steps", tags = ["recipes : steps"],
-                                dependencies = [Depends(inject_tenant_uri)])
+        self.router = APIRouter(
+            prefix = "/v1/recipes/{uuid}/steps",
+            tags = ["recipes : steps"],
+            dependencies = [Depends(inject_tenant_uri)],
+        )
         self._register_routes()
 
     def _register_routes(self) -> None:
@@ -32,7 +36,7 @@ class StepRouter:
             path = "/",
             endpoint = self.create_step,
             summary = "Create step",
-            response_model = StepCreatedSchema,
+            response_model = ApiResponse[StepCreatedSchema],
             response_description = "UUID of the created step",
             status_code = 201,
             responses = {404: {"description": "Recipe not found"}},
@@ -42,7 +46,7 @@ class StepRouter:
             path = "/",
             endpoint = self.list_steps,
             summary = "List steps for recipe",
-            response_model = list[StepSchema],
+            response_model = ApiResponse[list[StepSchema]],
             response_description = "Steps of the recipe in creation order",
             responses = {404: {"description": "Recipe not found"}},
         )
@@ -51,6 +55,7 @@ class StepRouter:
             path = "/purge",
             endpoint = self.purge_steps,
             summary = "Purge soft-deleted steps",
+            response_model = ApiResponse[dict],
             response_description = "Number of permanently deleted records",
             status_code = 200,
         )
@@ -59,7 +64,7 @@ class StepRouter:
             path = "/{step_uuid}",
             endpoint = self.get_step,
             summary = "Get step",
-            response_model = StepSchema,
+            response_model = ApiResponse[StepSchema],
             response_description = "The step",
             responses = {404: {"description": "Step not found"}},
         )
@@ -70,6 +75,7 @@ class StepRouter:
             summary = "Replace step",
             status_code = 204,
             responses = {404: {"description": "Step not found"}},
+            response_model = None,
         )
         self.router.add_api_route(
             methods = ["PATCH"],
@@ -78,6 +84,7 @@ class StepRouter:
             summary = "Partially update step",
             status_code = 204,
             responses = {404: {"description": "Step not found"}},
+            response_model = None,
         )
         self.router.add_api_route(
             methods = ["DELETE"],
@@ -86,13 +93,14 @@ class StepRouter:
             summary = "Delete step",
             status_code = 204,
             responses = {404: {"description": "Step not found"}},
+            response_model = None,
         )
         self.router.add_api_route(
             methods = ["POST"],
             path = "/{step_uuid}/duplicate",
             endpoint = self.duplicate_step,
             summary = "Duplicate step",
-            response_model = StepCreatedSchema,
+            response_model = ApiResponse[StepCreatedSchema],
             response_description = "UUID of the duplicated step",
             status_code = 201,
             responses = {404: {"description": "Step not found"}},
@@ -102,13 +110,8 @@ class StepRouter:
     def _to_uuid6(uuid: StdUUID) -> UUID:
         return UUID(str(uuid))
 
-    async def create_step(self, uuid: StdUUID, payload: StepCreateSchema) -> StepCreatedSchema:
-        """Create a new step linked to the recipe.
-
-        Steps define the preparation procedure of a recipe in chronological order.
-        Returns the UUID of the created step.
-        Fields: uuid, recipe_uuid, name, description, created_at, updated_at, version.
-        """
+    async def create_step(self, uuid: StdUUID, payload: StepCreateSchema) -> ApiResponse[StepCreatedSchema]:
+        """Create a new step linked to the recipe."""
         recipe = await self._recipe_service.read(self._to_uuid6(uuid))
         if recipe is None:
             self._logger.warning("⚠️ Recipe not found via HTTP", uuid = str(uuid))
@@ -118,25 +121,52 @@ class StepRouter:
             name = payload.name,
             description = payload.description,
         ))
-        return StepCreatedSchema(uuid = result.uuid)
+        return success_response(
+            data = StepCreatedSchema(uuid = result.uuid),
+            links = {
+                "self": f"/v1/recipes/{uuid}/steps/{result.uuid}",
+                "collection": f"/v1/recipes/{uuid}/steps",
+            },
+        )
 
-    async def get_step(self, uuid: StdUUID, step_uuid: StdUUID) -> StepSchema:
-        """Get a step by its UUID, scoped to the given recipe.
-
-        Returns 404 if the step does not exist or does not belong to the specified recipe.
-        Fields: uuid, recipe_uuid, name, description, created_at, updated_at, version.
-        """
+    async def get_step(self, uuid: StdUUID, step_uuid: StdUUID) -> ApiResponse[StepSchema]:
+        """Get a step by its UUID, scoped to the given recipe."""
         result = await self._service.read(self._to_uuid6(step_uuid))
         if result is None or result.recipe_uuid != self._to_uuid6(uuid):
             self._logger.warning("⚠️ Step not found via HTTP", step_uuid = str(step_uuid), recipe_uuid = str(uuid))
             raise HTTPException(status_code = 404, detail = "Step not found")
-        return StepSchema.model_validate(result, from_attributes = True)
+        return success_response(
+            data = StepSchema.model_validate(result, from_attributes = True),
+            links = {
+                "self": f"/v1/recipes/{uuid}/steps/{step_uuid}",
+                "collection": f"/v1/recipes/{uuid}/steps",
+                "duplicate": f"/v1/recipes/{uuid}/steps/{step_uuid}/duplicate",
+            },
+        )
+
+    async def list_steps(
+            self,
+            uuid: StdUUID,
+            name: Annotated[str | None, Query(
+                min_length = 1,
+                description = "Filtre optionnel : recherche partielle sur le nom (insensible à la casse).",
+                examples = ["préparer"],
+            )] = None,
+    ) -> ApiResponse[list[StepSchema]]:
+        """List all steps belonging to the recipe, optionally filtered by name."""
+        recipe = await self._recipe_service.read(self._to_uuid6(uuid))
+        if recipe is None:
+            self._logger.warning("⚠️ Recipe not found via HTTP", uuid = str(uuid))
+            raise HTTPException(status_code = 404, detail = "Recipe not found")
+        items = await self._service.find_by_recipe(self._to_uuid6(uuid))
+        if name:
+            name_lower = name.lower()
+            items = [i for i in items if name_lower in i.name.lower()]
+        data = [StepSchema.model_validate(i, from_attributes = True) for i in items]
+        return success_response(data = data, links = {"self": f"/v1/recipes/{uuid}/steps"})
 
     async def update_step(self, uuid: StdUUID, step_uuid: StdUUID, payload: StepUpdateSchema) -> None:
-        """Replace name and description of a step (PUT semantics), scoped to the given recipe.
-
-        Returns 404 if the step does not exist or does not belong to the specified recipe.
-        """
+        """Replace name and description of a step (PUT semantics)."""
         existing = await self._service.read(self._to_uuid6(step_uuid))
         if existing is None or existing.recipe_uuid != self._to_uuid6(uuid):
             self._logger.warning("⚠️ Step not found via HTTP", step_uuid = str(step_uuid), recipe_uuid = str(uuid))
@@ -149,11 +179,7 @@ class StepRouter:
         ))
 
     async def patch_step(self, uuid: StdUUID, step_uuid: StdUUID, payload: StepPatchSchema) -> None:
-        """Partially update a step (PATCH semantics), scoped to the given recipe.
-
-        Only the fields provided in the body are updated; omitted fields keep their current value.
-        Returns 404 if the step does not exist or does not belong to the specified recipe.
-        """
+        """Partially update a step (PATCH semantics)."""
         existing = await self._service.read(self._to_uuid6(step_uuid))
         if existing is None or existing.recipe_uuid != self._to_uuid6(uuid):
             self._logger.warning("⚠️ Step not found via HTTP", step_uuid = str(step_uuid), recipe_uuid = str(uuid))
@@ -166,61 +192,30 @@ class StepRouter:
         ))
 
     async def delete_step(self, uuid: StdUUID, step_uuid: StdUUID) -> None:
-        """Soft-delete a step, scoped to the given recipe.
-
-        The step is marked as deleted and excluded from list results.
-        Returns 404 if the step does not exist or does not belong to the specified recipe.
-        Use `DELETE /v1/recipes/{uuid}/steps/purge` to permanently remove expired entries.
-        """
+        """Soft-delete a step."""
         existing = await self._service.read(self._to_uuid6(step_uuid))
         if existing is None or existing.recipe_uuid != self._to_uuid6(uuid):
             self._logger.warning("⚠️ Step not found via HTTP", step_uuid = str(step_uuid), recipe_uuid = str(uuid))
             raise HTTPException(status_code = 404, detail = "Step not found")
         await self._service.delete(self._to_uuid6(step_uuid))
 
-    async def list_steps(
-            self,
-            uuid: StdUUID,
-            name: Annotated[str | None, Query(
-                min_length = 1,
-                description = "Filtre optionnel : recherche partielle sur le nom, insensible à la casse.",
-                examples = ["préparer"],
-            )] = None,
-    ) -> list[StepSchema]:
-        """List all steps belonging to the recipe, optionally filtered by name.
-
-        Returns steps in creation order (UUIDv7 time-ordered).
-        Each item: uuid, recipe_uuid, name, description, created_at, updated_at, version.
-        """
-        recipe = await self._recipe_service.read(self._to_uuid6(uuid))
-        if recipe is None:
-            self._logger.warning("⚠️ Recipe not found via HTTP", uuid = str(uuid))
-            raise HTTPException(status_code = 404, detail = "Recipe not found")
-        items = await self._service.find_by_recipe(self._to_uuid6(uuid))
-        if name:
-            name_lower = name.lower()
-            items = [i for i in items if name_lower in i.name.lower()]
-        return [StepSchema.model_validate(i, from_attributes = True) for i in items]
-
-    async def duplicate_step(self, uuid: StdUUID, step_uuid: StdUUID) -> StepCreatedSchema:
-        """Duplicate a step, assigning it a new UUID, scoped to the given recipe.
-
-        The copy remains linked to the same recipe.
-        Returns the UUID of the new step.
-        Returns 404 if the step does not exist or does not belong to the specified recipe.
-        """
+    async def duplicate_step(self, uuid: StdUUID, step_uuid: StdUUID) -> ApiResponse[StepCreatedSchema]:
+        """Duplicate a step, assigning it a new UUID."""
         existing = await self._service.read(self._to_uuid6(step_uuid))
         if existing is None or existing.recipe_uuid != self._to_uuid6(uuid):
             self._logger.warning("⚠️ Step not found via HTTP", step_uuid = str(step_uuid), recipe_uuid = str(uuid))
             raise HTTPException(status_code = 404, detail = "Step not found")
         result = await self._service.duplicate(self._to_uuid6(step_uuid))
-        return StepCreatedSchema(uuid = result.uuid)
+        return success_response(
+            data = StepCreatedSchema(uuid = result.uuid),
+            links = {
+                "self": f"/v1/recipes/{uuid}/steps/{result.uuid}",
+                "collection": f"/v1/recipes/{uuid}/steps",
+                "original": f"/v1/recipes/{uuid}/steps/{step_uuid}",
+            },
+        )
 
-    async def purge_steps(self, uuid: StdUUID) -> dict:
-        """Permanently delete soft-deleted steps that have exceeded the retention period.
-
-        Returns {"purged": <count>} with the number of permanently deleted records.
-        This operation is irreversible.
-        """
+    async def purge_steps(self, uuid: StdUUID) -> ApiResponse[dict]:
+        """Permanently delete soft-deleted steps that have exceeded the retention period."""
         purged = await self._service.purge()
-        return {"purged": purged}
+        return success_response(data = {"purged": purged})

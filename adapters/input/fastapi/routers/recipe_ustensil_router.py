@@ -1,3 +1,4 @@
+from arclith.adapters.input.schemas import ApiResponse, success_response
 from arclith.domain.ports.logger import Logger
 from fastapi import APIRouter, Depends, HTTPException
 from uuid import UUID as StdUUID
@@ -25,9 +26,8 @@ class RecipeUstensilRouter:
             path = "/",
             endpoint = self.list_ustensils,
             summary = "List recipe ustensils",
-            response_model = list[UstensilSchema],
+            response_model = ApiResponse[list[UstensilSchema]],
             response_description = "Ustensils linked to the recipe",
-            status_code = 200,
             responses = {404: {"description": "Recipe not found"}},
         )
         self.router.add_api_route(
@@ -35,7 +35,7 @@ class RecipeUstensilRouter:
             path = "/{ustensil_uuid}",
             endpoint = self.add_ustensil,
             summary = "Link ustensil to recipe",
-            response_model = UstensilCreatedSchema,
+            response_model = ApiResponse[UstensilCreatedSchema],
             response_description = "UUID of the linked ustensil",
             status_code = 201,
             responses = {404: {"description": "Recipe or ustensil not found"}},
@@ -46,32 +46,27 @@ class RecipeUstensilRouter:
             endpoint = self.remove_ustensil,
             summary = "Unlink ustensil from recipe",
             status_code = 204,
+            response_model = None,
         )
 
     @staticmethod
     def _to_uuid6(uuid: StdUUID) -> UUID:
         return UUID(str(uuid))
 
-    async def list_ustensils(self, uuid: StdUUID) -> list[UstensilSchema]:
-        """List all ustensils currently linked to the recipe.
-
-        Returns the snapshot data as stored in the recipe at link time.
-        Each item: uuid, name, created_at, updated_at, version.
-        """
+    async def list_ustensils(self, uuid: StdUUID) -> ApiResponse[list[UstensilSchema]]:
+        """List all ustensils currently linked to the recipe."""
         recipe = await self._service.read(self._to_uuid6(uuid))
         if recipe is None:
             self._logger.warning("⚠️ Recipe not found via HTTP", uuid = str(uuid))
             raise HTTPException(status_code = 404, detail = "Recipe not found")
-        return [UstensilSchema.model_validate(u, from_attributes = True) for u in (recipe.ustensils or [])]
+        data = [UstensilSchema.model_validate(u, from_attributes = True) for u in (recipe.ustensils or [])]
+        return success_response(
+            data = data,
+            links = {"self": f"/v1/recipes/{uuid}/ustensils"},
+        )
 
-    async def add_ustensil(self, uuid: StdUUID, ustensil_uuid: StdUUID) -> UstensilCreatedSchema:
-        """Link an existing ustensil to a recipe.
-
-        Copies the ustensil's data (name, uuid) into the recipe at the time of linking.
-        The original uuid is preserved to allow future synchronisation.
-        Idempotent: if the ustensil is already linked, the call is silently ignored.
-        Returns the UUID of the linked ustensil.
-        """
+    async def add_ustensil(self, uuid: StdUUID, ustensil_uuid: StdUUID) -> ApiResponse[UstensilCreatedSchema]:
+        """Link an existing ustensil to a recipe."""
         recipe = await self._service.read(self._to_uuid6(uuid))
         if recipe is None:
             raise HTTPException(status_code = 404, detail = "Recipe not found")
@@ -79,15 +74,17 @@ class RecipeUstensilRouter:
             await self._service.add_ustensil(self._to_uuid6(uuid), self._to_uuid6(ustensil_uuid))
         except ValueError as e:
             raise HTTPException(status_code = 404, detail = str(e))
-        return UstensilCreatedSchema(uuid = ustensil_uuid)
+        return success_response(
+            data = UstensilCreatedSchema(uuid = ustensil_uuid),
+            links = {
+                "self": f"/v1/recipes/{uuid}/ustensils/{ustensil_uuid}",
+                "collection": f"/v1/recipes/{uuid}/ustensils",
+                "ustensil": f"/v1/ustensils/{ustensil_uuid}",
+            },
+        )
 
     async def remove_ustensil(self, uuid: StdUUID, ustensil_uuid: StdUUID) -> None:
-        """Unlink an ustensil from a recipe.
-
-        Removes the ustensil snapshot from the recipe's ustensil list.
-        Silent no-op if the ustensil is not currently linked (idempotent).
-        Does not affect the ustensil entity itself.
-        """
+        """Unlink an ustensil from a recipe."""
         recipe = await self._service.read(self._to_uuid6(uuid))
         if recipe is None:
             raise HTTPException(status_code = 404, detail = "Recipe not found")

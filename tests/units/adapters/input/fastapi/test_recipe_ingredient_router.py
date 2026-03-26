@@ -29,6 +29,7 @@ def ingredient_uuid(ingredient_repo):
 def test_link_ingredient(client, recipe_uuid, ingredient_uuid):
     r = client.post(f"/v1/recipes/{recipe_uuid}/ingredients/{ingredient_uuid}")
     assert r.status_code == 201
+    assert "uuid" in r.json()["data"]
 
 
 def test_link_ingredient_recipe_not_found(client, ingredient_uuid):
@@ -53,7 +54,7 @@ def test_list_recipe_ingredients(client, recipe_uuid, ingredient_uuid):
     client.post(f"/v1/recipes/{recipe_uuid}/ingredients/{ingredient_uuid}")
     r = client.get(f"/v1/recipes/{recipe_uuid}/ingredients/")
     assert r.status_code == 200
-    assert len(r.json()) == 1
+    assert len(r.json()["data"]) == 1
 
 
 def test_list_recipe_ingredients_recipe_not_found(client):

@@ -22,7 +22,7 @@ def recipe_uuid(recipe_service):
 def test_create_step(client, recipe_uuid):
     r = client.post(f"/v1/recipes/{recipe_uuid}/steps/", json = {"name": "Pétrir"})
     assert r.status_code == 201
-    assert "uuid" in r.json()
+    assert "uuid" in r.json()["data"]
 
 
 def test_create_step_with_description(client, recipe_uuid):
@@ -41,14 +41,14 @@ def test_list_steps(client, recipe_uuid):
     client.post(f"/v1/recipes/{recipe_uuid}/steps/", json = {"name": "Cuire"})
     r = client.get(f"/v1/recipes/{recipe_uuid}/steps/")
     assert r.status_code == 200
-    assert len(r.json()) == 2
+    assert len(r.json()["data"]) == 2
 
 
 def test_list_steps_filter_by_name(client, recipe_uuid):
     client.post(f"/v1/recipes/{recipe_uuid}/steps/", json = {"name": "Pétrir la pâte"})
     client.post(f"/v1/recipes/{recipe_uuid}/steps/", json = {"name": "Cuire"})
     r = client.get(f"/v1/recipes/{recipe_uuid}/steps/?name=pétrir")
-    assert len(r.json()) == 1
+    assert len(r.json()["data"]) == 1
 
 
 def test_list_steps_recipe_not_found(client):
@@ -58,10 +58,10 @@ def test_list_steps_recipe_not_found(client):
 
 
 def test_get_step(client, recipe_uuid):
-    created = client.post(f"/v1/recipes/{recipe_uuid}/steps/", json = {"name": "Pétrir"}).json()
+    created = client.post(f"/v1/recipes/{recipe_uuid}/steps/", json = {"name": "Pétrir"}).json()["data"]
     r = client.get(f"/v1/recipes/{recipe_uuid}/steps/{created['uuid']}")
     assert r.status_code == 200
-    assert r.json()["name"] == "Pétrir"
+    assert r.json()["data"]["name"] == "Pétrir"
 
 
 def test_get_step_not_found(client, recipe_uuid):
@@ -71,7 +71,7 @@ def test_get_step_not_found(client, recipe_uuid):
 
 
 def test_update_step(client, recipe_uuid):
-    created = client.post(f"/v1/recipes/{recipe_uuid}/steps/", json = {"name": "Pétrir"}).json()
+    created = client.post(f"/v1/recipes/{recipe_uuid}/steps/", json = {"name": "Pétrir"}).json()["data"]
     r = client.put(f"/v1/recipes/{recipe_uuid}/steps/{created['uuid']}", json = {"name": "Pétrir 10 min"})
     assert r.status_code == 204
 
@@ -83,7 +83,7 @@ def test_update_step_not_found(client, recipe_uuid):
 
 
 def test_patch_step(client, recipe_uuid):
-    created = client.post(f"/v1/recipes/{recipe_uuid}/steps/", json = {"name": "Pétrir"}).json()
+    created = client.post(f"/v1/recipes/{recipe_uuid}/steps/", json = {"name": "Pétrir"}).json()["data"]
     r = client.patch(f"/v1/recipes/{recipe_uuid}/steps/{created['uuid']}", json = {"description": "Bien mélanger"})
     assert r.status_code == 204
 
@@ -95,7 +95,7 @@ def test_patch_step_not_found(client, recipe_uuid):
 
 
 def test_delete_step(client, recipe_uuid):
-    created = client.post(f"/v1/recipes/{recipe_uuid}/steps/", json = {"name": "Pétrir"}).json()
+    created = client.post(f"/v1/recipes/{recipe_uuid}/steps/", json = {"name": "Pétrir"}).json()["data"]
     r = client.delete(f"/v1/recipes/{recipe_uuid}/steps/{created['uuid']}")
     assert r.status_code == 204
 
@@ -107,10 +107,10 @@ def test_delete_step_not_found(client, recipe_uuid):
 
 
 def test_duplicate_step(client, recipe_uuid):
-    created = client.post(f"/v1/recipes/{recipe_uuid}/steps/", json = {"name": "Pétrir"}).json()
+    created = client.post(f"/v1/recipes/{recipe_uuid}/steps/", json = {"name": "Pétrir"}).json()["data"]
     r = client.post(f"/v1/recipes/{recipe_uuid}/steps/{created['uuid']}/duplicate")
     assert r.status_code == 201
-    assert r.json()["uuid"] != created["uuid"]
+    assert r.json()["data"]["uuid"] != created["uuid"]
 
 
 def test_duplicate_step_not_found(client, recipe_uuid):

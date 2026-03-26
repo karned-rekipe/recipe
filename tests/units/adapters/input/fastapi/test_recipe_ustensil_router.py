@@ -29,6 +29,7 @@ def ustensil_uuid(ustensil_repo):
 def test_link_ustensil(client, recipe_uuid, ustensil_uuid):
     r = client.post(f"/v1/recipes/{recipe_uuid}/ustensils/{ustensil_uuid}")
     assert r.status_code == 201
+    assert "uuid" in r.json()["data"]
 
 
 def test_link_ustensil_recipe_not_found(client, ustensil_uuid):
@@ -53,7 +54,7 @@ def test_list_recipe_ustensils(client, recipe_uuid, ustensil_uuid):
     client.post(f"/v1/recipes/{recipe_uuid}/ustensils/{ustensil_uuid}")
     r = client.get(f"/v1/recipes/{recipe_uuid}/ustensils/")
     assert r.status_code == 200
-    assert len(r.json()) == 1
+    assert len(r.json()["data"]) == 1
 
 
 def test_list_recipe_ustensils_recipe_not_found(client):

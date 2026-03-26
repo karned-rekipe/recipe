@@ -1,5 +1,7 @@
+from arclith.adapters.input.schemas import ApiResponse, success_response
 from arclith.domain.ports.logger import Logger
 from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Annotated
 from uuid import UUID as StdUUID
 from uuid6 import UUID
 
@@ -22,7 +24,8 @@ class IngredientRouter:
         self.router = APIRouter(
             prefix = "/v1/ingredients",
             tags = ["ingredients"],
-            dependencies = [Depends(inject_tenant_uri)])
+            dependencies = [Depends(inject_tenant_uri)],
+        )
         self._register_routes()
 
     def _register_routes(self) -> None:
@@ -31,7 +34,7 @@ class IngredientRouter:
             path = "/",
             endpoint = self.create_ingredient,
             summary = "Create ingredient",
-            response_model = IngredientCreatedSchema,
+            response_model = ApiResponse[IngredientCreatedSchema],
             response_description = "UUID of the created ingredient",
             status_code = 201,
         )
@@ -40,7 +43,7 @@ class IngredientRouter:
             path = "/",
             endpoint = self.list_ingredients,
             summary = "List ingredients",
-            response_model = list[IngredientSchema],
+            response_model = ApiResponse[list[IngredientSchema]],
             response_description = "List of active ingredients",
         )
         self.router.add_api_route(
@@ -48,6 +51,7 @@ class IngredientRouter:
             path = "/purge",
             endpoint = self.purge_ingredients,
             summary = "Purge soft-deleted ingredients",
+            response_model = ApiResponse[dict],
             response_description = "Number of permanently deleted records",
             status_code = 200,
         )
@@ -56,7 +60,7 @@ class IngredientRouter:
             path = "/{uuid}",
             endpoint = self.get_ingredient,
             summary = "Get ingredient",
-            response_model = IngredientSchema,
+            response_model = ApiResponse[IngredientSchema],
             response_description = "The ingredient",
             responses = {404: {"description": "Ingredient not found"}},
         )
@@ -67,6 +71,7 @@ class IngredientRouter:
             summary = "Replace ingredient",
             status_code = 204,
             responses = {404: {"description": "Ingredient not found"}},
+            response_model = None,
         )
         self.router.add_api_route(
             methods = ["PATCH"],
@@ -75,6 +80,7 @@ class IngredientRouter:
             summary = "Partially update ingredient",
             status_code = 204,
             responses = {404: {"description": "Ingredient not found"}},
+            response_model = None,
         )
         self.router.add_api_route(
             methods = ["DELETE"],
@@ -82,13 +88,14 @@ class IngredientRouter:
             endpoint = self.delete_ingredient,
             summary = "Delete ingredient",
             status_code = 204,
+            response_model = None,
         )
         self.router.add_api_route(
             methods = ["POST"],
             path = "/{uuid}/duplicate",
             endpoint = self.duplicate_ingredient,
             summary = "Duplicate ingredient",
-            response_model = IngredientCreatedSchema,
+            response_model = ApiResponse[IngredientCreatedSchema],
             response_description = "UUID of the duplicated ingredient",
             status_code = 201,
         )
@@ -97,92 +104,81 @@ class IngredientRouter:
     def _to_uuid6(uuid: StdUUID) -> UUID:
         return UUID(str(uuid))
 
-    async def create_ingredient(self, payload: IngredientCreateSchema) -> IngredientCreatedSchema:
-        """Create a new reusable ingredient.
-
-        Returns the UUID of the created ingredient.
-        Once created, use `POST /v1/recipes/{uuid}/ingredients/{ingredient_uuid}` to attach it to a recipe.
-        """
+    async def create_ingredient(self, payload: IngredientCreateSchema) -> ApiResponse[IngredientCreatedSchema]:
+        """Create a new reusable ingredient."""
         result = await self._service.create(Ingredient(name = payload.name, unit = payload.unit))
-        return IngredientCreatedSchema(uuid = result.uuid)
+        return success_response(
+            data = IngredientCreatedSchema(uuid = result.uuid),
+            links = {
+                "self": f"/v1/ingredients/{result.uuid}",
+                "collection": "/v1/ingredients",
+            },
+        )
 
-    async def get_ingredient(self, uuid: StdUUID) -> IngredientSchema:
-        """Get an ingredient by its UUID.
-
-        Returns the full ingredient object.
-        Fields: uuid, name, unit, created_at, updated_at, version.
-        """
+    async def get_ingredient(self, uuid: StdUUID) -> ApiResponse[IngredientSchema]:
+        """Get an ingredient by its UUID."""
         result = await self._service.read(self._to_uuid6(uuid))
         if result is None:
             self._logger.warning("⚠️ Ingredient not found via HTTP", uuid = str(uuid))
             raise HTTPException(status_code = 404, detail = "Ingredient not found")
-        return IngredientSchema.model_validate(result, from_attributes = True)
+        return success_response(
+            data = IngredientSchema.model_validate(result, from_attributes = True),
+            links = {
+                "self": f"/v1/ingredients/{uuid}",
+                "collection": "/v1/ingredients",
+                "duplicate": f"/v1/ingredients/{uuid}/duplicate",
+            },
+        )
 
     async def update_ingredient(self, uuid: StdUUID, payload: IngredientUpdateSchema) -> None:
-        """Replace name and unit of an existing ingredient (PUT semantics).
-
-        Both fields are fully overwritten.
-        Note: changes do not propagate to recipes where this ingredient is already linked (snapshot model).
-        """
+        """Replace name and unit of an existing ingredient (PUT semantics)."""
         await self._service.update(Ingredient(uuid = self._to_uuid6(uuid), name = payload.name, unit = payload.unit))
 
     async def patch_ingredient(self, uuid: StdUUID, payload: IngredientPatchSchema) -> None:
-        """Partially update an ingredient (PATCH semantics).
-
-        Only the fields provided in the body are updated; omitted fields keep their current value.
-        Note: changes do not propagate to recipes where this ingredient is already linked (snapshot model).
-        """
+        """Partially update an ingredient (PATCH semantics)."""
         existing = await self._service.read(self._to_uuid6(uuid))
         if existing is None:
             self._logger.warning("⚠️ Ingredient not found via HTTP", uuid = str(uuid))
             raise HTTPException(status_code = 404, detail = "Ingredient not found")
-        await self._service.update(Ingredient(
-            uuid = existing.uuid,
-            name = payload.name if payload.name is not None else existing.name,
-            unit = payload.unit if payload.unit is not None else existing.unit,
-        ))
+        await self._service.update(
+            Ingredient(
+                uuid = existing.uuid,
+                name = payload.name if payload.name is not None else existing.name,
+                unit = payload.unit if payload.unit is not None else existing.unit,
+            )
+        )
 
     async def delete_ingredient(self, uuid: StdUUID) -> None:
-        """Soft-delete an ingredient.
-
-        The ingredient is marked as deleted and excluded from list results.
-        It is retained until the purge retention period expires.
-        Use `DELETE /v1/ingredients/purge` to permanently remove expired entries.
-        """
+        """Soft-delete an ingredient."""
         await self._service.delete(self._to_uuid6(uuid))
 
     async def list_ingredients(
             self,
-            name: str | None = Query(
-                default = None,
-                min_length = 1,
-                description = "Filtre optionnel : recherche partielle sur le nom, insensible à la casse. Ex: 'far' retournera 'Farine de blé'.",
-                examples = ["farine"],
-            ),
-    ) -> list[IngredientSchema]:
-        """List all active (non-deleted) ingredients.
-
-        Pass `name` for a partial, case-insensitive name filter.
-        Each item: uuid, name, unit, created_at, updated_at, version.
-        Use the returned UUIDs with `POST /v1/recipes/{uuid}/ingredients/{ingredient_uuid}` to link them to a recipe.
-        """
+            name: Annotated[
+                str | None,
+                Query(min_length = 1,
+                      description = "Filtre optionnel : recherche partielle sur le nom (insensible à la casse).",
+                      examples = ["farine"]),
+            ] = None,
+    ) -> ApiResponse[list[IngredientSchema]]:
+        """List all active (non-deleted) ingredients."""
         items = await self._service.find_by_name(name) if name else await self._service.find_all()
-        return [IngredientSchema.model_validate(i) for i in items]
+        data = [IngredientSchema.model_validate(i, from_attributes = True) for i in items]
+        return success_response(data = data, links = {"self": "/v1/ingredients"})
 
-    async def duplicate_ingredient(self, uuid: StdUUID) -> IngredientCreatedSchema:
-        """Duplicate an ingredient, assigning it a new UUID.
-
-        Creates an independent copy with the same name and unit.
-        Returns the UUID of the new ingredient.
-        """
+    async def duplicate_ingredient(self, uuid: StdUUID) -> ApiResponse[IngredientCreatedSchema]:
+        """Duplicate an ingredient, assigning it a new UUID."""
         result = await self._service.duplicate(self._to_uuid6(uuid))
-        return IngredientCreatedSchema(uuid = result.uuid)
+        return success_response(
+            data = IngredientCreatedSchema(uuid = result.uuid),
+            links = {
+                "self": f"/v1/ingredients/{result.uuid}",
+                "collection": "/v1/ingredients",
+                "original": f"/v1/ingredients/{uuid}",
+            },
+        )
 
-    async def purge_ingredients(self) -> dict:
-        """Permanently delete soft-deleted ingredients that have exceeded the retention period.
-
-        Returns {"purged": <count>} with the number of permanently deleted records.
-        This operation is irreversible.
-        """
+    async def purge_ingredients(self) -> ApiResponse[dict]:
+        """Permanently delete soft-deleted ingredients that have exceeded the retention period."""
         purged = await self._service.purge()
-        return {"purged": purged}
+        return success_response(data = {"purged": purged})

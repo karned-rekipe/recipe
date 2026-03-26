@@ -14,18 +14,23 @@ def client(ingredient_service, logger):
 def test_create_ingredient(client):
     r = client.post("/v1/ingredients/", json = {"name": "Farine", "unit": "g"})
     assert r.status_code == 201
-    assert "uuid" in r.json()
+    body = r.json()
+    assert body["status"] == "success"
+    assert "uuid" in body["data"]
 
 
 def test_create_ingredient_minimal(client):
     r = client.post("/v1/ingredients/", json = {"name": "Sel"})
     assert r.status_code == 201
+    assert r.json()["status"] == "success"
 
 
 def test_list_ingredients_empty(client):
     r = client.get("/v1/ingredients/")
     assert r.status_code == 200
-    assert r.json() == []
+    body = r.json()
+    assert body["status"] == "success"
+    assert body["data"] == []
 
 
 def test_list_ingredients(client):
@@ -33,7 +38,7 @@ def test_list_ingredients(client):
     client.post("/v1/ingredients/", json = {"name": "Sel"})
     r = client.get("/v1/ingredients/")
     assert r.status_code == 200
-    assert len(r.json()) == 2
+    assert len(r.json()["data"]) == 2
 
 
 def test_list_ingredients_filter(client):
@@ -41,14 +46,14 @@ def test_list_ingredients_filter(client):
     client.post("/v1/ingredients/", json = {"name": "Sel fin"})
     r = client.get("/v1/ingredients/?name=farine")
     assert r.status_code == 200
-    assert len(r.json()) == 1
+    assert len(r.json()["data"]) == 1
 
 
 def test_get_ingredient(client):
-    created = client.post("/v1/ingredients/", json = {"name": "Farine"}).json()
+    created = client.post("/v1/ingredients/", json = {"name": "Farine"}).json()["data"]
     r = client.get(f"/v1/ingredients/{created['uuid']}")
     assert r.status_code == 200
-    assert r.json()["name"] == "Farine"
+    assert r.json()["data"]["name"] == "Farine"
 
 
 def test_get_ingredient_not_found(client):
@@ -58,7 +63,7 @@ def test_get_ingredient_not_found(client):
 
 
 def test_update_ingredient(client):
-    created = client.post("/v1/ingredients/", json = {"name": "Farine"}).json()
+    created = client.post("/v1/ingredients/", json = {"name": "Farine"}).json()["data"]
     r = client.put(f"/v1/ingredients/{created['uuid']}", json = {"name": "Farine complète"})
     assert r.status_code == 204
 
@@ -70,7 +75,7 @@ def test_update_ingredient_unknown_uuid(client):
 
 
 def test_patch_ingredient(client):
-    created = client.post("/v1/ingredients/", json = {"name": "Farine"}).json()
+    created = client.post("/v1/ingredients/", json = {"name": "Farine"}).json()["data"]
     r = client.patch(f"/v1/ingredients/{created['uuid']}", json = {"name": "Farine complète"})
     assert r.status_code == 204
 
@@ -82,16 +87,16 @@ def test_patch_ingredient_not_found(client):
 
 
 def test_delete_ingredient(client):
-    created = client.post("/v1/ingredients/", json = {"name": "Farine"}).json()
+    created = client.post("/v1/ingredients/", json = {"name": "Farine"}).json()["data"]
     r = client.delete(f"/v1/ingredients/{created['uuid']}")
     assert r.status_code == 204
 
 
 def test_duplicate_ingredient(client):
-    created = client.post("/v1/ingredients/", json = {"name": "Farine"}).json()
+    created = client.post("/v1/ingredients/", json = {"name": "Farine"}).json()["data"]
     r = client.post(f"/v1/ingredients/{created['uuid']}/duplicate")
     assert r.status_code == 201
-    assert r.json()["uuid"] != created["uuid"]
+    assert r.json()["data"]["uuid"] != created["uuid"]
 
 
 def test_purge_ingredients(client):
