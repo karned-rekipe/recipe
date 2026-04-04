@@ -1,11 +1,5 @@
-from adapters.output.duckdb.ingredient_repository import DuckDBIngredientRepository
-from adapters.output.duckdb.recipe_repository import DuckDBRecipeRepository
-from adapters.output.duckdb.step_repository import DuckDBStepRepository
-from adapters.output.duckdb.ustensil_repository import DuckDBUstensilRepository
+from adapters.output.duckdb.repositories.recipe_repository import DuckDBRecipeRepository
 
 __all__ = [
-    "DuckDBIngredientRepository",
-    "DuckDBRecipeRepository",
-    "DuckDBUstensilRepository",
-    "DuckDBStepRepository",
+    "DuckDBRecipeRepository"
 ]

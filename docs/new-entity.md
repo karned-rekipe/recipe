@@ -217,7 +217,7 @@ class RecipeSchema(BaseSchema):
 
 `adapters/input/fastapi/recipe_router.py`
 
-Copier `ingredient_router.py`, remplacer `Ingredient` → `Recipe` et adapter les champs.
+Copier `recipe_router.py`, remplacer `Recipe` → `Recipe` et adapter les champs.
 
 Puis enregistrer dans `adapters/input/fastapi/router.py` :
 
@@ -237,7 +237,7 @@ def register_routers(app: FastAPI, arclith: Arclith) -> None:
 
 `adapters/input/fastmcp/recipe_tools.py`
 
-Copier `ingredient_tools.py`, remplacer `Ingredient` → `Recipe` et adapter les champs.
+Copier `recipe_tools.py`, remplacer `Recipe` → `Recipe` et adapter les champs.
 
 Puis enregistrer dans `adapters/input/fastmcp/tools.py` :
 

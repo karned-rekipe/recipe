@@ -4,14 +4,13 @@ SRC := domain adapters application infrastructure
 UV  := uv run --frozen
 
 setup:
-	uv sync --group dev
 	git config core.hooksPath .githooks
 
 lint:
-	$(UV) ruff check .
+	$(UV) ruff check $(SRC)
 
 typecheck:
-	$(UV) mypy .
+	$(UV) mypy $(SRC)
 
 security:
 	$(UV) bandit -r $(SRC) -ll
@@ -32,9 +31,7 @@ test-e2e:
 coverage:
 	$(UV) pytest --cov --cov-report=term-missing --cov-report=html
 
-quality: lint security complexity coverage
-	@echo "--- typecheck (info only) ---"
-	-$(UV) mypy .
+quality: lint security complexity typecheck coverage
 
 precommit: lint typecheck security
 

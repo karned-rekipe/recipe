@@ -1,56 +1,31 @@
-from arclith.adapters.input.schemas.base_schema import BaseSchema
-from pydantic import Field, BaseModel
-from typing import Literal
+from pydantic import BaseModel, Field, field_validator
 from uuid import UUID as StdUUID
 
-from adapters.input.schemas import IngredientSchema
-from adapters.input.schemas.ingredient_schema import IngredientCreateSchema
-from adapters.input.schemas.step_schema import StepSchema, StepCreateSchema
-from adapters.input.schemas.ustensil_schema import UstensilSchema, UstensilCreateSchema
+from arclith.adapters.input.schemas.base_schema import BaseSchema
 
 
 class RecipeCreateSchema(BaseModel):
     name: str = Field(
         ...,
-        description="Nom de la recette.",
-        examples=["Pizza", "Salade"])
-    description: str | None = Field(
-        None,
-        description="Description détaillée de la recette. None si non applicable.",
-        examples=["Recette de pizza", "Recette de salade"])
-    ingredients: list[IngredientCreateSchema] | None = Field(
-        None,
-        description="Liste des ingrédients nécessaires pour la recette. None si non applicable.")
-    ustensils: list[UstensilCreateSchema] | None = Field(
-        None,
-        description="Liste des ustensiles nécessaires pour la recette.")
-    steps: list[StepCreateSchema] | None = Field(None, description="Liste des étapes nécessaires pour la recette.")
-    nutriscore: Literal["A", "B", "C", "D", "E", "F"] | None = Field(
-        None,
-        description="Nutriscore de la recette. None si non applicable.",
-        examples=["A", "B", "C", "D", "E", "F"])
+        description="Nom de l'ingrédient.",
+        examples = ["Farine de blé", "Sel fin"],
+        min_length = 1
+    )
+
+    @field_validator("name", mode = "before")
+    @classmethod
+    def name_not_empty(cls, v: str) -> str:
+        if isinstance(v, str) and not v.strip():
+            raise ValueError("Name cannot be empty")
+        return v
 
 
-class RecipePatchSchema(BaseModel):
-    name: str | None = Field(
+class RecipePatchSchema(RecipeCreateSchema):
+    name: str | None = Field(  # type: ignore[assignment]
         None,
-        description="Nom de la recette.",
-        examples=["Pizza", "Salade"])
-    description: str | None = Field(
-        None,
-        description = "Description détaillée de la recette. None si non applicable.",
-        examples = ["Recette de pizza", "Recette de salade"])
-    ingredients: list[IngredientCreateSchema] | None = Field(
-        None,
-        description = "Liste des ingrédients nécessaires pour la recette. None si non applicable.")
-    ustensils: list[UstensilCreateSchema] | None = Field(
-        None,
-        description = "Liste des ustensiles nécessaires pour la recette.")
-    steps: list[StepCreateSchema] | None = Field(None, description = "Liste des étapes nécessaires pour la recette.")
-    nutriscore: Literal["A", "B", "C", "D", "E", "F"] | None = Field(
-        None,
-        description = "Nutriscore de la recette. None si non applicable.",
-        examples = ["A", "B", "C", "D", "E", "F"])
+        description="Nouveau nom de l'ingrédient. Ignoré si absent.",
+        examples=["Farine complète", None],
+    )
 
 
 class RecipeUpdateSchema(RecipeCreateSchema):
@@ -59,27 +34,14 @@ class RecipeUpdateSchema(RecipeCreateSchema):
 
 class RecipeCreatedSchema(BaseModel):
     uuid: StdUUID = Field(
-        description="UUID de la recette créée.",
-        examples=["123e4567-e89b-12d3-a456-426614174000"])
+        description="Identifiant unique de l'ingrédient créé (UUIDv7).",
+        examples=["01951234-5678-7abc-def0-123456789abc"],
+    )
 
 
 class RecipeSchema(BaseSchema):
     name: str = Field(
         ...,
-        description="Nom de la recette.",
-        examples=["Pizza", "Salade"])
-    description: str | None = Field(
-        None,
-        description="Description détaillée de la recette. None si non applicable.",
-        examples=["Recette de pizza", "Recette de salade"])
-    ingredients: list[IngredientSchema] | None = Field(
-        None,
-        description="Liste des ingrédients nécessaires pour la recette. None si non applicable.")
-    ustensils: list[UstensilSchema] | None = Field(
-        None,
-        description="Liste des ustensiles nécessaires pour la recette.")
-    steps: list[StepSchema] | None = Field(None, description="Liste des étapes nécessaires pour la recette.")
-    nutriscore: Literal["A", "B", "C", "D", "E", "F"] | None = Field(
-        None,
-        description="Nutriscore de la recette. None si non applicable.",
-        examples=["A", "B", "C", "D", "E", "F"])
+        description = "Nom de l'ingrédient.",
+        examples = ["Farine de blé", "Sel fin"],
+    )

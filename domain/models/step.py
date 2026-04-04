@@ -1,34 +1,19 @@
-from arclith import Entity
-from pydantic import Field, field_validator
-from uuid6 import UUID
+from pydantic import Field, computed_field
+
+from arclith.domain.models.entity import Entity
 
 
 class Step(Entity):
-    recipe_uuid: UUID | None = Field(
-        default = None,
-        description="UUID de la recette à laquelle appartient l'étape.",
-        examples=["01951234-5678-7abc-def0-123456789abc"],
-    )
-    name: str = Field(
-        ...,
-        max_length=80,
-        description="Nom de l'étape",
-        examples = ["Préparer la pâte", "Cuire la pizza"],
-    )
-    description: str | None = Field(
-        default = None,
-        description="La description détaillée de l'étape. None si non applicable.",
-        examples=[
-            "Mélanger la farine, l'eau et la levure pour préparer la pâte.",
-            "Cuire la pizza au four à 220°C pendant 15 minutes.",
-            None,
-        ],
-    )
+    name: str = Field(..., examples=["Prepare the dough", "Bake in the oven"])
+    description: str | None = Field(None, examples=["Mix flour and water until smooth.", "Preheat oven to 200°C and bake for 25 minutes."])
+    cooking_time: int | None = Field(None, description="Cooking time in minutes.", ge=0, examples=[25, 10])
+    rest_time: int | None = Field(None, description="Rest time in minutes.", ge=0, examples=[60, 0])
+    preparation_time: int | None = Field(None, description="Preparation time in minutes.", ge=0, examples=[15, 5])
+    secondary_images: list[str] = Field(default_factory=list, examples=[["https://example.com/step1b.jpg"]])
+    main_image: str | None = Field(None, examples=["https://example.com/step1.jpg"])
+    rank: int = Field(..., description="Order of the step in the recipe.", ge=1, examples=[1, 2, 3])
 
-    @field_validator("name", mode="before")
-    @classmethod
-    def strip_name(cls, v: str) -> str:
-        stripped = v.strip()
-        if not stripped:
-            raise ValueError("Step name cannot be empty")
-        return stripped
+    @computed_field
+    @property
+    def total_time(self) -> int:
+        return (self.cooking_time or 0) + (self.rest_time or 0) + (self.preparation_time or 0)

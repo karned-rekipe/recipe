@@ -1,3 +1,3 @@
-from .ingredient_repository import IngredientRepository
+from .output.recipe_repository import RecipeRepository
 
-__all__ = ["IngredientRepository"]
+__all__ = ["RecipeRepository"]

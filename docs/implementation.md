@@ -1,6 +1,6 @@
 # Implémenter une entité avec arclith
 
-Ce dossier est le projet de référence. Il montre comment brancher `arclith` pour une entité concrète : **Ingredient**.
+Ce dossier est le projet de référence. Il montre comment brancher `arclith` pour une entité concrète : **Recipe**.
 
 Chaque section correspond à un fichier à créer, dans l'ordre des couches (de l'intérieur vers l'extérieur).
 
@@ -11,20 +11,20 @@ Chaque section correspond à un fichier à créer, dans l'ordre des couches (de 
 Hérite de `Entity`. Contient uniquement les champs métier et leur validation.
 
 ```python
-# domain/models/ingredient.py
+# domain/models/recipe.py
 from dataclasses import dataclass
 from arclith.domain.models.entity import Entity
 
 
 @dataclass
-class Ingredient(Entity):
+class Recipe(Entity):
     name: str = ""
     unit: str | None = None
 
     def __post_init__(self) -> None:
         # validation métier ici
         if not self.name.strip():
-            raise ValueError("Ingredient name cannot be empty")
+            raise ValueError("Recipe name cannot be empty")
 ```
 
 > `Entity` apporte automatiquement : `uuid`, `created_at`, `updated_at`, `deleted_at`, `is_deleted`, `version`.
@@ -36,15 +36,15 @@ class Ingredient(Entity):
 Si ton entité a des requêtes au-delà du CRUD générique, déclare-les ici sous forme d'interface abstraite.
 
 ```python
-# domain/ports/ingredient_repository.py
+# domain/ports/recipe_repository.py
 from abc import abstractmethod
 from arclith.domain.ports.repository import Repository
-from domain.models.ingredient import Ingredient
+from domain.models.recipe import Recipe
 
 
-class IngredientRepository(Repository[Ingredient]):
+class RecipeRepository(Repository[Recipe]):
     @abstractmethod
-    async def find_by_name(self, name: str) -> list[Ingredient]: ...
+    async def find_by_name(self, name: str) -> list[Recipe]: ...
 ```
 
 > Si ton entité n'a pas de requêtes spécifiques, utilise directement `Repository[T]` — pas besoin de ce fichier.
@@ -59,19 +59,19 @@ Ajoute ici uniquement ce qui est propre à ton entité.
 ```python
 # application/use_cases/find_by_name.py
 from arclith.domain.ports.logger import Logger
-from domain.models.ingredient import Ingredient
-from domain.ports.ingredient_repository import IngredientRepository
+from domain.models.recipe import Recipe
+from domain.ports.recipe_repository import RecipeRepository
 
 
 class FindByNameUseCase:
-    def __init__(self, repository: IngredientRepository, logger: Logger) -> None:
+    def __init__(self, repository: RecipeRepository, logger: Logger) -> None:
         self._repository = repository
         self._logger = logger
 
-    async def execute(self, name: str) -> list[Ingredient]:
-        self._logger.info("🔍 Finding ingredients by name", name=name)
+    async def execute(self, name: str) -> list[Recipe]:
+        self._logger.info("🔍 Finding recipes by name", name=name)
         result = [i for i in await self._repository.find_by_name(name) if not i.is_deleted]
-        self._logger.info("✅ Ingredients found", name=name, count=len(result))
+        self._logger.info("✅ Recipes found", name=name, count=len(result))
         return result
 ```
 
@@ -82,20 +82,20 @@ class FindByNameUseCase:
 Étend `BaseService` pour exposer les méthodes aux adapters. Ne contient pas de logique — délègue aux use cases.
 
 ```python
-# application/services/ingredient_service.py
+# application/services/recipe_service.py
 from arclith.application.services.base_service import BaseService
 from arclith.domain.ports.logger import Logger
-from domain.models.ingredient import Ingredient
-from domain.ports.ingredient_repository import IngredientRepository
+from domain.models.recipe import Recipe
+from domain.ports.recipe_repository import RecipeRepository
 from application.use_cases import FindByNameUseCase
 
 
-class IngredientService(BaseService[Ingredient]):
-    def __init__(self, repository: IngredientRepository, logger: Logger, retention_days: float | None = None) -> None:
+class RecipeService(BaseService[Recipe]):
+    def __init__(self, repository: RecipeRepository, logger: Logger, retention_days: float | None = None) -> None:
         super().__init__(repository, logger, retention_days)
         self._find_by_name_uc = FindByNameUseCase(repository, logger)
 
-    async def find_by_name(self, name: str) -> list[Ingredient]:
+    async def find_by_name(self, name: str) -> list[Recipe]:
         return await self._find_by_name_uc.execute(name)
 ```
 
@@ -108,16 +108,16 @@ class IngredientService(BaseService[Ingredient]):
 Séparent le modèle HTTP du modèle domaine. Un schéma par intention (création, mise à jour, réponse).
 
 ```python
-# adapters/input/schemas/ingredient_schema.py
+# adapters/input/schemas/recipe_schema.py
 from arclith.adapters.input.schemas.base_schema import BaseSchema
 
 
-class IngredientCreateSchema(BaseModel):
+class RecipeCreateSchema(BaseModel):
     name: str
     unit: str | None = None
 
 
-class IngredientSchema(BaseSchema):  # réponse — hérite de BaseSchema (uuid, timestamps…)
+class RecipeSchema(BaseSchema):  # réponse — hérite de BaseSchema (uuid, timestamps…)
     name: str
     unit: str | None = None
 ```
@@ -133,12 +133,12 @@ Implémente le port en héritant du repository `arclith` correspondant **et** du
 ```python
 # adapters/output/memory/repository.py
 from arclith.adapters.output.memory.repository import InMemoryRepository
-from domain.models.ingredient import Ingredient
-from domain.ports.ingredient_repository import IngredientRepository
+from domain.models.recipe import Recipe
+from domain.ports.recipe_repository import RecipeRepository
 
 
-class InMemoryIngredientRepository(InMemoryRepository[Ingredient], IngredientRepository):
-    async def find_by_name(self, name: str) -> list[Ingredient]:
+class InMemoryRecipeRepository(InMemoryRepository[Recipe], RecipeRepository):
+    async def find_by_name(self, name: str) -> list[Recipe]:
         return [i for i in self._store.values() if name.lower() in i.name.lower()]
 ```
 
@@ -149,11 +149,11 @@ Même pattern pour MongoDB :
 from arclith.adapters.output.mongodb.repository import MongoDBRepository
 
 
-class MongoDBIngredientRepository(MongoDBRepository[Ingredient], IngredientRepository):
+class MongoDBRecipeRepository(MongoDBRepository[Recipe], RecipeRepository):
     def __init__(self, config: MongoDBConfig, logger: Logger) -> None:
-        super().__init__(config, Ingredient, logger)
+        super().__init__(config, Recipe, logger)
 
-    async def find_by_name(self, name: str) -> list[Ingredient]:
+    async def find_by_name(self, name: str) -> list[Recipe]:
         return [self._from_doc(doc) async for doc in self._collection.find({"name": {"$regex": name, "$options": "i"}})]
 ```
 
@@ -165,28 +165,28 @@ Lit la config via l'instance `Arclith` et instancie les dépendances. C'est le s
 
 ```python
 from arclith import Arclith, MongoDBConfig
-from domain.ports.ingredient_repository import IngredientRepository
-from application.services.ingredient_service import IngredientService
+from domain.ports.recipe_repository import RecipeRepository
+from application.services.recipe_service import RecipeService
 
 
-def build_ingredient_service(arclith: Arclith) -> tuple[IngredientService, ...]:
+def build_recipe_service(arclith: Arclith) -> tuple[RecipeService, ...]:
     logger = arclith.logger
     config = arclith.config
     match config.adapters.repository:
         case "mongodb":
-            from adapters.output.mongodb.repository import MongoDBIngredientRepository
+            from adapters.output.mongodb.repository import MongoDBRecipeRepository
             mongo = config.adapters.mongodb
-            repo: IngredientRepository = MongoDBIngredientRepository(
+            repo: RecipeRepository = MongoDBRecipeRepository(
                 MongoDBConfig(uri=mongo.uri, db_name=mongo.db_name, collection_name=mongo.collection_name),
                 logger,
             )
         case "duckdb":
-            from adapters.output.duckdb.repository import DuckDBIngredientRepository
-            repo = DuckDBIngredientRepository(config.adapters.duckdb.path)
+            from adapters.output.duckdb.repository import DuckDBRecipeRepository
+            repo = DuckDBRecipeRepository(config.adapters.duckdb.path)
         case _:
-            from adapters.output.memory.repository import InMemoryIngredientRepository
-            repo = InMemoryIngredientRepository()
-    return IngredientService(repo, logger, config.soft_delete.retention_days), logger
+            from adapters.output.memory.repository import InMemoryRecipeRepository
+            repo = InMemoryRecipeRepository()
+    return RecipeService(repo, logger, config.soft_delete.retention_days), logger
 ```
 
 ---
@@ -212,8 +212,8 @@ from fastapi import APIRouter, Depends
 from adapters.input.fastapi.dependencies import inject_tenant_uri
 
 self.router = APIRouter(
-    prefix="/ingredient/v1",
-    tags=["ingredients"],
+    prefix="/recipe/v1",
+    tags=["recipes"],
     dependencies=[Depends(inject_tenant_uri)],
 )
 ```
@@ -232,10 +232,10 @@ adapters:
   mongodb:
     uri: mongodb://localhost:27017  # ignoré si multitenant: true
     db_name: mydb
-    collection_name: ingredients
+    collection_name: recipes
 
   duckdb:
-    path: data/ingredients.csv   # .csv | .parquet | .json | .arrow
+    path: data/recipes.csv   # .csv | .parquet | .json | .arrow
 
 soft_delete:
   retention_days: 30    # null = jamais supprimé physiquement
