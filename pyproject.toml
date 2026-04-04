@@ -15,6 +15,7 @@ dependencies = [
 
 [tool.mypy]
 explicit_package_bases = true
+plugins = ["pydantic.mypy"]
 
 [tool.coverage.run]
 source = ["domain", "adapters", "application", "infrastructure"]

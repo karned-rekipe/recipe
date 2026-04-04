@@ -13,7 +13,7 @@ class Step(Entity):
     main_image: str | None = Field(None, examples=["https://example.com/step1.jpg"])
     rank: int = Field(..., description="Order of the step in the recipe.", ge=1, examples=[1, 2, 3])
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def total_time(self) -> int:
         return (self.cooking_time or 0) + (self.rest_time or 0) + (self.preparation_time or 0)
