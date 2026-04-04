@@ -37,7 +37,7 @@ class IngredientMCP:
                 green_score: Annotated[int | None, Field(default=None, description="Environmental score (OpenFoodFacts scale, ≥0).", examples=[80])] = None,
                 unit: Annotated[str | None, Field(default=None, description="Unit of measure.", examples=["g", "ml", "pièce"])] = None,
                 quantity: Annotated[float | None, Field(default=None, description="Default quantity (≥0).", examples=[100.0])] = None,
-                season_months: Annotated[dict[int, int], Field(default_factory=dict, description="Seasonality map: month (1-12) → score (1-3), 3=peak season.", examples=[{6: 2, 7: 3, 8: 3, 9: 2}])] = {},
+                season_months: Annotated[dict[int, int], Field(description="Seasonality map: month (1-12) → score (1-3), 3=peak season.", examples=[{6: 2, 7: 3, 8: 3, 9: 2}])] = {},
                 ctx: fastmcp.Context | None = None,
         ) -> dict:
             """Create a new ingredient.
@@ -87,7 +87,7 @@ class IngredientMCP:
                 green_score: Annotated[int | None, Field(default=None, description="Environmental score.")] = None,
                 unit: Annotated[str | None, Field(default=None, description="Unit of measure.")] = None,
                 quantity: Annotated[float | None, Field(default=None, description="Default quantity.")] = None,
-                season_months: Annotated[dict[int, int], Field(default_factory=dict, description="Seasonality map.")] = {},
+                season_months: Annotated[dict[int, int], Field(description="Seasonality map.")] = {},
                 ctx: fastmcp.Context | None = None,
         ) -> dict:
             """Replace an existing ingredient (PUT semantics).
