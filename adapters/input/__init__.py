@@ -1,4 +1,4 @@
-from .fastapi.router import IngredientRouter
-from .fastmcp.tools import IngredientMCP
+from .fastapi.routers.recipe_router import RecipeRouter
+from .fastmcp.tools.recipe_tools import RecipeMCP
 
-__all__ = ["IngredientRouter", "IngredientMCP"]
+__all__ = ["RecipeRouter", "RecipeMCP"]

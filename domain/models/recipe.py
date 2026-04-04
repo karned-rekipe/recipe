@@ -1,52 +1,57 @@
-from arclith import Entity
-from pydantic import Field, field_validator
-from typing import Literal
+from enum import Enum
 
-from domain.models import Ingredient
+from pydantic import BaseModel, Field, field_validator
+
+from arclith.domain.models.entity import Entity
+from domain.models.country import Country
+from domain.models.meal_category import MealCategory
 from domain.models.step import Step
-from domain.models.ustensil import Ustensil
+
+
+class MealType(str, Enum):
+    breakfast = "breakfast"
+    lunch = "lunch"
+    snack = "snack"
+    dinner = "dinner"
+
+
+class Source(BaseModel):
+    name: str
+    description: str | None = None
+    uri: str | None = None
 
 
 class Recipe(Entity):
     name: str = Field(
         ...,
-        description="Nom de la recette, normalisé (espaces supprimés en début et fin).",
-        examples=["Recette de pizza", "Recette de salade"]
+        description="Recipe name, normalized (leading/trailing spaces removed).",
+        examples=["recipe 1", "recipe 2"],
     )
-
     description: str | None = Field(
-        default = None,
-        description="Description détaillée de la recette. None si non applicable.",
-        examples=["Recette de pizza", "Recette de salade"]
+        None,
+        description="Detailed description of the recipe.",
+        examples=["Pizza recipe", "Salad recipe"],
     )
-
-    ingredients: list[Ingredient] | None = Field(
-        default = None,
-        description="Liste des ingrédients nécessaires pour la recette. None si non applicable.")
-
-    ustensils: list[Ustensil] | None = Field(default = None,
-                                             description = "Liste des ustensiles nécessaires pour la recette.")
-
-    nutriscore: Literal["A", "B", "C", "D", "E", "F"] | None = Field(
-        default = None,
-        description="Nutriscore de la recette. None si non applicable.", examples=["A", "B", "C", "D", "E", "F"])
-
-    steps: list[Step] | None = Field(default = None, description = "Liste des étapes nécessaires pour la recette.")
+    origin_country: Country | None = Field(
+        None,
+        description="Country of origin (ISO 3166-1 alpha-2 code).",
+        examples=["FR", "ES", "IT"],
+    )
+    meal_type: MealType | None = Field(None, description="Indicative meal type.", examples=["dinner", "lunch"])
+    meal_category: MealCategory | None = Field(None, description="Indicative course in the meal.", examples=["first_course", "dessert"])
+    servings: int | None = Field(None, description="Number of servings.", ge=1, examples=[4, 6])
+    unit_count: int | None = Field(None, description="Number of units.", ge=1, examples=[12, 8])
+    difficulty: int | None = Field(None, description="Difficulty level from 1 to 5.", ge=1, le=5, examples=[3])
+    price: int | None = Field(None, description="Price level from 1 to 5.", ge=1, le=5, examples=[2])
+    sources: list[Source] = Field(default_factory=list, description="List of sources.", examples=[[{"name": "Marmiton", "description": "Original recipe", "uri": "https://www.marmiton.org/recettes/recette_pizza.html"}]])
+    secondary_images: list[str] = Field(default_factory=list, description="Secondary image URIs.", examples=[["https://example.com/pizza2.jpg", "https://example.com/pizza3.jpg"]])
+    main_image: str | None = Field(None, description="Main image URI.", examples=["https://example.com/pizza.jpg"])
+    steps: list[Step] = Field(default_factory=list, description="Ordered list of recipe steps.")
 
     @field_validator("name", mode="before")
     @classmethod
     def strip_name(cls, v: str) -> str:
         stripped = v.strip()
         if not stripped:
-            raise ValueError("Ingredient name cannot be empty")
+            raise ValueError("Recipe name cannot be empty")
         return stripped
-
-    def model_post_init(self, __context) -> None:
-        """Assign recipe_uuid to all steps after model initialization."""
-        super().model_post_init(__context)
-        if self.steps:
-            for step in self.steps:
-                if step.recipe_uuid is None:
-                    step.recipe_uuid = self.uuid
-
-

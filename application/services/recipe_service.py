@@ -1,49 +1,21 @@
+from application.use_cases import FindByNameUseCase
 from arclith import BaseService, Logger
-from uuid6 import UUID
-
-from application.use_cases import (
-    FindByNameUseCase,
-    LinkIngredientToRecipeUseCase,
-    LinkUstensilToRecipeUseCase,
-    UnlinkIngredientFromRecipeUseCase,
-    UnlinkUstensilFromRecipeUseCase,
-)
 from domain.models.recipe import Recipe
-from domain.ports.ingredient_repository import IngredientRepository
-from domain.ports.recipe_repository import RecipeRepository
-from domain.ports.ustensil_repository import UstensilRepository
+from domain.ports.output.recipe_repository import RecipeRepository
 
 
 class RecipeService(BaseService[Recipe]):
-    def __init__(
-            self,
-            repository: RecipeRepository,
-            ingredient_repo: IngredientRepository,
-            ustensil_repo: UstensilRepository,
-            logger: Logger,
-            retention_days: float | None = None,
-    ) -> None:
+    def __init__(self, repository: RecipeRepository, logger: Logger, retention_days: float | None = None) -> None:
         super().__init__(repository, logger, retention_days)
-        self._find_by_name_uc: FindByNameUseCase[Recipe] = FindByNameUseCase(repository, logger)
-        self._link_ingredient_uc: LinkIngredientToRecipeUseCase = LinkIngredientToRecipeUseCase(repository,
-                                                                                                ingredient_repo, logger)
-        self._unlink_ingredient_uc: UnlinkIngredientFromRecipeUseCase = UnlinkIngredientFromRecipeUseCase(repository,
-                                                                                                          logger)
-        self._link_ustensil_uc: LinkUstensilToRecipeUseCase = LinkUstensilToRecipeUseCase(repository, ustensil_repo,
-                                                                                          logger)
-        self._unlink_ustensil_uc: UnlinkUstensilFromRecipeUseCase = UnlinkUstensilFromRecipeUseCase(repository, logger)
+        self._recipe_repo = repository
+        self._find_by_name_uc = FindByNameUseCase(repository, logger)
 
     async def find_by_name(self, name: str) -> list[Recipe]:
         return await self._find_by_name_uc.execute(name)
 
-    async def add_ingredient(self, recipe_uuid: UUID, ingredient_uuid: UUID) -> Recipe:
-        return await self._link_ingredient_uc.execute(recipe_uuid, ingredient_uuid)
+    async def find_page_filtered(self, name: str | None = None, offset: int = 0, limit: int | None = None) -> tuple[list[Recipe], int]:
+        """Return a page of recipes (optionally filtered by name) and total count."""
+        if name:
+            return await self._recipe_repo.find_page_by_name(name, offset, limit)
+        return await self._recipe_repo.find_page(offset, limit)
 
-    async def remove_ingredient(self, recipe_uuid: UUID, ingredient_uuid: UUID) -> None:
-        await self._unlink_ingredient_uc.execute(recipe_uuid, ingredient_uuid)
-
-    async def add_ustensil(self, recipe_uuid: UUID, ustensil_uuid: UUID) -> Recipe:
-        return await self._link_ustensil_uc.execute(recipe_uuid, ustensil_uuid)
-
-    async def remove_ustensil(self, recipe_uuid: UUID, ustensil_uuid: UUID) -> None:
-        await self._unlink_ustensil_uc.execute(recipe_uuid, ustensil_uuid)

@@ -1,6 +1,6 @@
 from typing import Any
 import pytest
-from adapters.output.memory.repository import InMemoryIngredientRepository
+from adapters.output.memory.repository import InMemoryRecipeRepository
 from arclith.domain.ports.logger import Logger, LogLevel
 
 
@@ -18,6 +18,6 @@ def logger() -> NullLogger:
 
 
 @pytest.fixture
-def repo() -> InMemoryIngredientRepository:
-    return InMemoryIngredientRepository()
+def repo() -> InMemoryRecipeRepository:
+    return InMemoryRecipeRepository()
 
