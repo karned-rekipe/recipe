@@ -1,6 +1,6 @@
 import pytest
 from fastapi import FastAPI
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
 from adapters.input.fastapi.dependencies import inject_tenant_uri, require_auth
 from adapters.input.fastapi.routers import AdminRouter, RecipeRouter
@@ -8,8 +8,36 @@ from application.services.recipe_service import RecipeService
 from infrastructure.purge_registry import PurgeRegistry
 
 
-def _payload(**kwargs) -> dict:
-    return {"name": "Farine", **kwargs}
+def _complete_payload(**kwargs) -> dict:
+    payload = {
+        "name": "Farine",
+        "description": "Recette de base",
+        "servings": 4,
+        "main_image": "https://example.com/recipe.jpg",
+        "secondary_images": ["https://example.com/recipe-2.jpg"],
+        "sources": [{"name": "Carnet", "description": "Version familiale", "uri": "https://example.com/farine"}],
+        "ingredients": [{
+            "name": "Farine de ble",
+            "quantity": 500,
+            "unit": "g",
+            "season_months": {},
+            "group": "feculents",
+            "rayon": "epicerie",
+            "green_score": 80,
+        }],
+        "equipment": [{"name": "Saladier", "quantity": 1}],
+        "steps": [{
+            "name": "Melanger",
+            "description": "Melanger tous les ingredients.",
+            "preparation_time": 10,
+            "rest_time": 0,
+            "cooking_time": 0,
+            "rank": 1,
+            "secondary_images": [],
+        }],
+    }
+    payload.update(kwargs)
+    return payload
 
 
 @pytest.fixture
@@ -31,31 +59,34 @@ def app(service, logger):
 
 @pytest.fixture
 async def client(app):
-    async with AsyncClient(transport = ASGITransport(app = app), base_url = "http://test") as c:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
 
 
 @pytest.fixture
 async def created(client):
-    response = await client.post("/v1/recipes/", json=_payload())
+    response = await client.post("/v1/recipes/", json=_complete_payload())
     return response.json()["data"]
 
 
-# --- POST / ---
-
 async def test_create_returns_201(client):
-    response = await client.post("/v1/recipes/", json=_payload())
+    response = await client.post("/v1/recipes/", json=_complete_payload())
     assert response.status_code == 201
 
 
 async def test_create_returns_uuid(client):
-    response = await client.post("/v1/recipes/", json=_payload())
+    response = await client.post("/v1/recipes/", json=_complete_payload())
     data = response.json()
     assert data["status"] == "success"
     assert "uuid" in data["data"]
 
 
-# --- GET /{uuid} ---
+async def test_create_rejects_incomplete_recipe(client):
+    payload = _complete_payload()
+    payload.pop("servings")
+    response = await client.post("/v1/recipes/", json=payload)
+    assert response.status_code == 422
+
 
 async def test_get_found(client, created):
     uuid = created["uuid"]
@@ -64,6 +95,10 @@ async def test_get_found(client, created):
     data = response.json()
     assert data["status"] == "success"
     assert data["data"]["name"] == "Farine"
+    assert data["data"]["servings"] == 4
+    assert data["data"]["ingredients"][0]["name"] == "Farine de ble"
+    assert data["data"]["equipment"][0]["name"] == "Saladier"
+    assert data["data"]["steps"][0]["name"] == "Melanger"
 
 
 async def test_get_not_found(client):
@@ -71,46 +106,127 @@ async def test_get_not_found(client):
     assert response.status_code == 404
 
 
-# --- PUT /{uuid} ---
-
 async def test_update_returns_204(client, created):
     uuid = created["uuid"]
-    response = await client.put(f"/v1/recipes/{uuid}", json = _payload(name = "Farine complète"))
+    response = await client.put(
+        f"/v1/recipes/{uuid}",
+        json=_complete_payload(
+            name="Farine complete",
+            ingredients=[{
+                "name": "Farine complete",
+                "quantity": 500,
+                "unit": "g",
+                "season_months": {},
+            }],
+        ),
+    )
     assert response.status_code == 204
 
 
-async def test_update_reflects_on_get(client, created):
+async def test_update_replaces_full_aggregate_and_preserves_creation_metadata(client, created):
     uuid = created["uuid"]
-    await client.put(f"/v1/recipes/{uuid}", json=_payload(name="Farine complète"))
-    response = await client.get(f"/v1/recipes/{uuid}")
-    assert response.json()["data"]["name"] == "Farine complète"
+    before = (await client.get(f"/v1/recipes/{uuid}")).json()["data"]
+
+    await client.put(
+        f"/v1/recipes/{uuid}",
+        json=_complete_payload(
+            name="Farine complete",
+            equipment=[{"name": "Robot", "quantity": 1}],
+            steps=[{
+                "name": "Petrir",
+                "description": "Petrir la pate.",
+                "preparation_time": 20,
+                "rest_time": 60,
+                "cooking_time": 0,
+                "rank": 1,
+                "secondary_images": [],
+            }],
+        ),
+    )
+    after = (await client.get(f"/v1/recipes/{uuid}")).json()["data"]
+
+    assert after["name"] == "Farine complete"
+    assert after["equipment"][0]["name"] == "Robot"
+    assert after["steps"][0]["name"] == "Petrir"
+    assert after["created_at"] == before["created_at"]
+    assert after["version"] == before["version"] + 1
 
 
-# --- PATCH /{uuid} ---
+async def test_update_preserves_migration_metadata_when_omitted(client):
+    created = (
+        await client.post(
+            "/v1/recipes/",
+            json=_complete_payload(
+                legacy_id=42,
+                favorite=True,
+                status="archived",
+                quality_status="text_only",
+                migration_metadata={"source_table": "mkg_recipe"},
+            ),
+        )
+    ).json()["data"]
+    uuid = created["uuid"]
+
+    await client.put(f"/v1/recipes/{uuid}", json=_complete_payload(name="Farine T80"))
+    after = (await client.get(f"/v1/recipes/{uuid}")).json()["data"]
+
+    assert after["name"] == "Farine T80"
+    assert after["legacy_id"] == 42
+    assert after["favorite"] is True
+    assert after["status"] == "archived"
+    assert after["quality_status"] == "text_only"
+    assert after["migration_metadata"] == {"source_table": "mkg_recipe"}
+
 
 async def test_patch_found_returns_204(client, created):
     uuid = created["uuid"]
-    response = await client.patch(f"/v1/recipes/{uuid}", json=_payload(name="Farine T80"))
+    response = await client.patch(f"/v1/recipes/{uuid}", json={"name": "Farine T80"})
     assert response.status_code == 204
 
 
-async def test_patch_preserves_unset_fields(client, created):
+async def test_patch_preserves_unset_sections(client, created):
     uuid = created["uuid"]
-    await client.patch(f"/v1/recipes/{uuid}", json=_payload(name="Farine T80"))
+    await client.patch(
+        f"/v1/recipes/{uuid}",
+        json={"ingredients": [{
+            "name": "Farine T80",
+            "quantity": 450,
+            "unit": "g",
+            "season_months": {},
+        }]},
+    )
     response = await client.get(f"/v1/recipes/{uuid}")
     data = response.json()["data"]
-    assert data["name"] == "Farine T80"
+    assert data["name"] == "Farine"
+    assert data["ingredients"][0]["name"] == "Farine T80"
+    assert data["equipment"][0]["name"] == "Saladier"
+    assert data["steps"][0]["name"] == "Melanger"
+
+
+async def test_patch_can_update_migration_quality_metadata(client, created):
+    uuid = created["uuid"]
+    await client.patch(
+        f"/v1/recipes/{uuid}",
+        json={
+            "quality_status": "validated",
+            "migration_metadata": {"source_table": "mkg_recipe", "qc_passed": True},
+        },
+    )
+
+    response = await client.get(f"/v1/recipes/{uuid}")
+    data = response.json()["data"]
+
+    assert data["quality_status"] == "validated"
+    assert data["migration_metadata"] == {"source_table": "mkg_recipe", "qc_passed": True}
 
 
 async def test_patch_not_found_returns_404(client):
     response = await client.patch(
         "/v1/recipes/01951234-5678-7abc-def0-000000000000",
-        json = _payload(name = "X"),
+        json={"name": "X"},
     )
     assert response.status_code == 404
 
-
-# --- DELETE /{uuid} ---
 
 async def test_delete_returns_204(client, created):
     uuid = created["uuid"]
@@ -125,8 +241,6 @@ async def test_delete_hides_from_get(client, created):
     assert response.status_code == 404
 
 
-# --- GET / ---
-
 async def test_list_empty(client):
     response = await client.get("/v1/recipes/")
     assert response.status_code == 200
@@ -137,8 +251,8 @@ async def test_list_empty(client):
 
 
 async def test_list_returns_all(client):
-    await client.post("/v1/recipes/", json=_payload(name="Farine"))
-    await client.post("/v1/recipes/", json=_payload(name="Sel"))
+    await client.post("/v1/recipes/", json=_complete_payload(name="Farine"))
+    await client.post("/v1/recipes/", json=_complete_payload(name="Sel"))
     response = await client.get("/v1/recipes/")
     assert response.status_code == 200
     data = response.json()
@@ -148,18 +262,18 @@ async def test_list_returns_all(client):
 
 
 async def test_list_filtered_by_name(client):
-    await client.post("/v1/recipes/", json=_payload(name="Farine de blé"))
-    await client.post("/v1/recipes/", json=_payload(name="Sel fin"))
+    await client.post("/v1/recipes/", json=_complete_payload(name="Farine de ble"))
+    await client.post("/v1/recipes/", json=_complete_payload(name="Sel fin"))
     response = await client.get("/v1/recipes/", params={"name": "farine"})
     assert response.status_code == 200
     data = response.json()
     assert len(data["data"]) == 1
-    assert data["data"][0]["name"] == "Farine de blé"
+    assert data["data"][0]["name"] == "Farine de ble"
     assert data["pagination"]["total"] == 1
 
 
 async def test_list_filter_no_match(client):
-    await client.post("/v1/recipes/", json=_payload(name="Sel"))
+    await client.post("/v1/recipes/", json=_complete_payload(name="Sel"))
     response = await client.get("/v1/recipes/", params={"name": "sucre"})
     assert response.status_code == 200
     data = response.json()
@@ -167,23 +281,20 @@ async def test_list_filter_no_match(client):
     assert data["pagination"]["total"] == 0
 
 
-# --- POST /{uuid}/duplicate ---
-
 async def test_duplicate_returns_201(client, created):
     uuid = created["uuid"]
     response = await client.post(f"/v1/recipes/{uuid}/duplicate")
     assert response.status_code == 201
 
 
-async def test_duplicate_has_different_uuid(client, created):
+async def test_duplicate_has_different_uuid_and_same_aggregate(client, created):
     uuid = created["uuid"]
-    response = await client.post(f"/v1/recipes/{uuid}/duplicate")
-    data = response.json()
-    assert data["status"] == "success"
-    assert data["data"]["uuid"] != uuid
+    response = await client.post(f"/v1/recipes/{uuid}/duplicate", headers={"Prefer": "return=representation"})
+    data = response.json()["data"]
+    assert data["uuid"] != uuid
+    assert data["ingredients"][0]["name"] == "Farine de ble"
+    assert data["steps"][0]["name"] == "Melanger"
 
-
-# --- DELETE /admin/purge ---
 
 async def test_purge_returns_200(client):
     response = await client.delete("/admin/purge")
@@ -198,6 +309,6 @@ async def test_purge_returns_count(client):
 
 
 async def test_purge_count_is_zero_when_nothing_eligible(client):
-    await client.post("/v1/recipes/", json=_payload())
+    await client.post("/v1/recipes/", json=_complete_payload())
     response = await client.delete("/admin/purge")
     assert response.json()["total"] == 0

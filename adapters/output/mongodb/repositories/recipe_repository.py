@@ -1,4 +1,5 @@
 import re
+from typing import Any
 
 from arclith.adapters.output.mongodb.config import MongoDBConfig
 from arclith.adapters.output.mongodb.repository import MongoDBRepository
@@ -10,6 +11,11 @@ from domain.ports.output.recipe_repository import RecipeRepository
 class MongoDBRecipeRepository(MongoDBRepository[Recipe], RecipeRepository):
     def __init__(self, config: MongoDBConfig, logger: Logger) -> None:
         super().__init__(config, Recipe, logger)
+
+    def _to_doc(self, entity: Recipe) -> dict[str, Any]:
+        doc = entity.model_dump(mode="json", exclude_computed_fields=True)
+        doc["_id"] = doc.pop("uuid")
+        return doc
 
     async def find_by_name(self, name: str) -> list[Recipe]:
         async with self._collection() as col:
@@ -48,4 +54,3 @@ class MongoDBRecipeRepository(MongoDBRepository[Recipe], RecipeRepository):
         items = [self._from_doc(doc) for doc in facet.get("data", [])]
         total = facet["total"][0]["count"] if facet.get("total") else 0
         return items, total
-

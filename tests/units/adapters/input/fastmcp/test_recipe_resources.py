@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
 import fastmcp
@@ -93,4 +93,3 @@ async def test_get_resource_found(client, service):
 async def test_get_resource_not_found_returns_null(client):
     result = await client.read_resource("recipe://01951234-5678-7abc-def0-000000000000")
     assert _json(result) is None
-

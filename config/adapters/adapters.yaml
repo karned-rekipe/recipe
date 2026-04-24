@@ -31,4 +31,4 @@ logger: console
 #   2. Configurer output/mongodb.yaml ou output/duckdb.yaml
 #   3. Ajouter les secrets (URI MongoDB) dans secrets.yaml ou Vault
 #
-repository: memory
+repository: mongodb

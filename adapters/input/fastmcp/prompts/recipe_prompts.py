@@ -62,9 +62,10 @@ class RecipePrompts:
             return (
                 "Here are all the capabilities exposed by this MCP server:\n\n"
                 "**Tools** (actions):\n"
-                "- create_recipe(name) — create a new recipe\n"
+                "- create_recipe(payload) — create a complete recipe aggregate\n"
                 "- get_recipe(uuid) — retrieve by UUID\n"
-                "- update_recipe(uuid, name) — full replacement (PUT semantics)\n"
+                "- update_recipe(uuid, payload) — full replacement (PUT semantics)\n"
+                "- patch_recipe(uuid, payload) — partial update (PATCH semantics)\n"
                 "- delete_recipe(uuid) — soft-delete\n"
                 "- list_recipes(name?) — list all active, optional partial name filter\n"
                 "- duplicate_recipe(uuid) — clone with a new UUID\n"
@@ -78,4 +79,3 @@ class RecipePrompts:
                 "- recipes://recent — last 10 recipes by creation date, newest first\n"
                 "- recipe://{uuid} — single recipe by UUID\n"
             )
-

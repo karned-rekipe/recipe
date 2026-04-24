@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import Enum
 
 from pydantic import BaseModel, Field, field_validator
@@ -5,6 +6,8 @@ from pydantic import BaseModel, Field, field_validator
 from arclith.domain.models.entity import Entity
 from domain.models.country import Country
 from domain.models.meal_category import MealCategory
+from domain.models.recipe_equipment import RecipeEquipment
+from domain.models.recipe_ingredient import RecipeIngredient
 from domain.models.step import Step
 
 
@@ -13,6 +16,19 @@ class MealType(str, Enum):
     lunch = "lunch"
     snack = "snack"
     dinner = "dinner"
+
+
+class RecipeStatus(str, Enum):
+    draft = "draft"
+    active = "active"
+    archived = "archived"
+
+
+class RecipeQualityStatus(str, Enum):
+    minimal = "minimal"
+    text_only = "text_only"
+    structured = "structured"
+    validated = "validated"
 
 
 class Source(BaseModel):
@@ -46,6 +62,31 @@ class Recipe(Entity):
     sources: list[Source] = Field(default_factory=list, description="List of sources.", examples=[[{"name": "Marmiton", "description": "Original recipe", "uri": "https://www.marmiton.org/recettes/recette_pizza.html"}]])
     secondary_images: list[str] = Field(default_factory=list, description="Secondary image URIs.", examples=[["https://example.com/pizza2.jpg", "https://example.com/pizza3.jpg"]])
     main_image: str | None = Field(None, description="Main image URI.", examples=["https://example.com/pizza.jpg"])
+    favorite: bool = Field(False, description="Whether the recipe was marked as a favorite.")
+    status: RecipeStatus = Field(RecipeStatus.active, description="Lifecycle status of the recipe.")
+    quality_status: RecipeQualityStatus = Field(
+        RecipeQualityStatus.structured,
+        description="Migration/completeness quality status for progressive enrichment.",
+    )
+    legacy_id: int | None = Field(
+        None,
+        description="Stable identifier from the legacy recipe source.",
+        examples=[42],
+    )
+    created_at_legacy: datetime | None = Field(
+        None,
+        description="Creation timestamp from the legacy source, when available.",
+    )
+    updated_at_legacy: datetime | None = Field(
+        None,
+        description="Last update timestamp from the legacy source, when available.",
+    )
+    migration_metadata: dict[str, str | int | float | bool | None] = Field(
+        default_factory=dict,
+        description="Technical metadata captured during migration/import runs.",
+    )
+    ingredients: list[RecipeIngredient] = Field(default_factory=list, description="Embedded list of recipe ingredients.")
+    equipment: list[RecipeEquipment] = Field(default_factory=list, description="Embedded list of recipe equipment.")
     steps: list[Step] = Field(default_factory=list, description="Ordered list of recipe steps.")
 
     @field_validator("name", mode="before")
