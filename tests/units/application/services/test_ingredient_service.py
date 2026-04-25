@@ -4,6 +4,9 @@ from adapters.output.memory.repositories.ingredient_repository import InMemoryIn
 from application.services.ingredient_service import IngredientService
 from domain.models.ingredient import Ingredient
 
+GROUP_UUID = "01951234-5678-7abc-def0-000000000201"
+RAYON_UUID = "01951234-5678-7abc-def0-000000000202"
+
 
 @pytest.fixture
 def ingredient_repo():
@@ -25,8 +28,8 @@ async def test_create_and_read(service):
 async def test_create_with_all_fields(service):
     ingredient = await service.create(Ingredient(
         name="Tomate",
-        rayon="fruits et légumes",
-        group="légumes",
+        rayon_uuid=RAYON_UUID,
+        group_uuid=GROUP_UUID,
         green_score=80,
         unit="g",
         quantity=100.0,
@@ -34,7 +37,7 @@ async def test_create_with_all_fields(service):
     ))
     found = await service.read(ingredient.uuid)
     assert found is not None
-    assert found.rayon == "fruits et légumes"
+    assert str(found.rayon_uuid) == RAYON_UUID
     assert found.season_months == {7: 3, 8: 3}
 
 

@@ -5,7 +5,17 @@ import fastmcp
 import pytest
 
 from adapters.input.fastmcp.tools import AdminMCP, RecipeMCP
+from adapters.output.memory.repositories.equipment_repository import InMemoryEquipmentRepository
+from adapters.output.memory.repositories.ingredient_repository import InMemoryIngredientRepository
 from application.services.recipe_service import RecipeService
+from domain.models.equipment import Equipment
+from domain.models.ingredient import Ingredient
+from uuid6 import UUID
+
+INGREDIENT_UUID = "01951234-5678-7abc-def0-000000000101"
+INGREDIENT_2_UUID = "01951234-5678-7abc-def0-000000000103"
+EQUIPMENT_UUID = "01951234-5678-7abc-def0-000000000102"
+EQUIPMENT_2_UUID = "01951234-5678-7abc-def0-000000000104"
 
 
 def _payload(**kwargs) -> dict:
@@ -14,12 +24,11 @@ def _payload(**kwargs) -> dict:
         "description": "Recette de base",
         "servings": 4,
         "ingredients": [{
-            "name": "Farine de ble",
+            "ingredient_uuid": INGREDIENT_UUID,
             "quantity": 500,
             "unit": "g",
-            "season_months": {},
         }],
-        "equipment": [{"name": "Saladier", "quantity": 1}],
+        "equipment": [{"equipment_uuid": EQUIPMENT_UUID, "quantity": 1}],
         "steps": [{
             "name": "Melanger",
             "description": "Melanger les ingredients.",
@@ -39,8 +48,37 @@ def mcp_app():
 
 
 @pytest.fixture
-def service(repo, logger):
-    return RecipeService(repo, logger)
+def ingredient_repo():
+    repository = InMemoryIngredientRepository()
+    ingredients = [
+        Ingredient(uuid=UUID(INGREDIENT_UUID), name="Farine de ble", unit="g"),
+        Ingredient(uuid=UUID(INGREDIENT_2_UUID), name="Farine T80", unit="g"),
+    ]
+    for ingredient in ingredients:
+        repository._store[ingredient.uuid] = ingredient
+    return repository
+
+
+@pytest.fixture
+def equipment_repo():
+    repository = InMemoryEquipmentRepository()
+    equipment_items = [
+        Equipment(uuid=UUID(EQUIPMENT_UUID), name="Saladier"),
+        Equipment(uuid=UUID(EQUIPMENT_2_UUID), name="Robot"),
+    ]
+    for equipment in equipment_items:
+        repository._store[equipment.uuid] = equipment
+    return repository
+
+
+@pytest.fixture
+def service(repo, ingredient_repo, equipment_repo, logger):
+    return RecipeService(
+        repo,
+        logger,
+        ingredient_repository=ingredient_repo,
+        equipment_repository=equipment_repo,
+    )
 
 
 @pytest.fixture
@@ -112,7 +150,7 @@ async def test_update_changes_full_aggregate(client, created_uuid):
             "uuid": created_uuid,
             "payload": _payload(
                 name="Farine T55",
-                equipment=[{"name": "Robot", "quantity": 1}],
+                equipment=[{"equipment_uuid": EQUIPMENT_2_UUID, "quantity": 1}],
             ),
         },
     )
@@ -129,10 +167,9 @@ async def test_patch_replaces_provided_sections_only(client, created_uuid):
             "uuid": created_uuid,
             "payload": {
                 "ingredients": [{
-                    "name": "Farine T80",
+                    "ingredient_uuid": INGREDIENT_2_UUID,
                     "quantity": 450,
                     "unit": "g",
-                    "season_months": {},
                 }],
             },
         },

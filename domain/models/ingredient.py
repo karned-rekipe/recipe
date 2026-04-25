@@ -1,6 +1,7 @@
 from pydantic import Field, field_validator
 
 from arclith.domain.models.entity import Entity
+from uuid6 import UUID
 
 
 class Ingredient(Entity):
@@ -9,15 +10,15 @@ class Ingredient(Entity):
         description="Ingredient name, normalized (leading/trailing spaces removed).",
         examples=["Tomate", "Farine de blé"],
     )
-    rayon: str | None = Field(
+    rayon_uuid: UUID | None = Field(
         None,
-        description="Shelf/aisle category.",
-        examples=["fruits et légumes", "boucherie"],
+        description="Referenced shelf/aisle UUID.",
+        examples=["01951234-5678-7abc-def0-123456789abc"],
     )
-    group: str | None = Field(
+    group_uuid: UUID | None = Field(
         None,
-        description="Food group.",
-        examples=["légumes", "protéines", "féculents"],
+        description="Referenced food group UUID.",
+        examples=["01951234-5678-7abc-def0-123456789abd"],
     )
     green_score: int | None = Field(
         None,
@@ -49,6 +50,13 @@ class Ingredient(Entity):
         if not stripped:
             raise ValueError("Ingredient name cannot be empty")
         return stripped
+
+    @field_validator("rayon_uuid", "group_uuid", mode="before")
+    @classmethod
+    def coerce_catalog_uuid(cls, value: object) -> UUID | None:
+        if value is None or isinstance(value, UUID):
+            return value
+        return UUID(str(value))
 
     @field_validator("season_months", mode="before")
     @classmethod

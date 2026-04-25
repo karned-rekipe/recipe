@@ -16,18 +16,20 @@ from domain.models.recipe_equipment import RecipeEquipment
 from domain.models.recipe_ingredient import RecipeIngredient
 from domain.models.step import Step
 
+INGREDIENT_UUID = "01951234-5678-7abc-def0-000000000101"
+EQUIPMENT_UUID = "01951234-5678-7abc-def0-000000000102"
+
 
 def _payload(**kwargs) -> dict:
     payload = {
         "name": "Farine",
         "servings": 4,
         "ingredients": [{
-            "name": "Farine de ble",
+            "ingredient_uuid": INGREDIENT_UUID,
             "quantity": 500,
             "unit": "g",
-            "season_months": {},
         }],
-        "equipment": [{"name": "Saladier", "quantity": 1}],
+        "equipment": [{"equipment_uuid": EQUIPMENT_UUID, "quantity": 1}],
         "steps": [{
             "name": "Melanger",
             "description": "Melanger les ingredients.",
@@ -75,11 +77,12 @@ def test_create_schema_missing_servings_raises():
         RecipeCreateSchema(**payload)
 
 
-def test_create_schema_requires_ingredient_and_step():
-    with pytest.raises(Exception):
-        RecipeCreateSchema(**_payload(ingredients=[]))
-    with pytest.raises(Exception):
-        RecipeCreateSchema(**_payload(steps=[]))
+def test_create_schema_allows_empty_ingredients_and_steps():
+    schema = RecipeCreateSchema(**_payload(ingredients=[], steps=[]))
+    recipe = recipe_create_payload_to_domain(schema)
+    assert recipe.ingredients == []
+    assert recipe.steps == []
+    assert recipe.status == RecipeStatus.draft
 
 
 def test_patch_schema_all_none():
@@ -111,11 +114,24 @@ def test_recipe_schema_from_entity():
         legacy_id=42,
         quality_status=RecipeQualityStatus.validated,
         migration_metadata={"source_table": "mkg_recipe"},
-        ingredients=[RecipeIngredient(name="Farine de ble", quantity=500, unit="g", season_months={})],
-        equipment=[RecipeEquipment(name="Saladier", quantity=1)],
+        ingredients=[RecipeIngredient(ingredient_uuid=INGREDIENT_UUID, quantity=500, unit="g")],
+        equipment=[RecipeEquipment(equipment_uuid=EQUIPMENT_UUID, quantity=1)],
         steps=[Step(name="Melanger", rank=1)],
     )
-    schema = RecipeSchema.model_validate(entity)
+    payload = entity.model_dump(mode="json")
+    payload["is_deleted"] = entity.is_deleted
+    payload["ingredients"] = [{
+        "ingredient_uuid": INGREDIENT_UUID,
+        "name": "Farine de ble",
+        "quantity": 500,
+        "unit": "g",
+        "season_months": {},
+        "rayon": None,
+        "group": None,
+        "green_score": 80,
+    }]
+    payload["equipment"] = [{"equipment_uuid": EQUIPMENT_UUID, "name": "Saladier", "quantity": 1}]
+    schema = RecipeSchema.model_validate(payload)
     assert schema.name == "Farine"
     assert schema.ingredients[0].name == "Farine de ble"
     assert schema.equipment[0].name == "Saladier"
@@ -148,25 +164,25 @@ def test_patch_payload_to_domain_preserves_unset_sections():
         status=RecipeStatus.archived,
         quality_status=RecipeQualityStatus.text_only,
         migration_metadata={"source_table": "mkg_recipe"},
-        ingredients=[RecipeIngredient(name="Farine de ble", quantity=500, unit="g", season_months={})],
-        equipment=[RecipeEquipment(name="Saladier", quantity=1)],
+        ingredients=[RecipeIngredient(ingredient_uuid=INGREDIENT_UUID, quantity=500, unit="g")],
+        equipment=[RecipeEquipment(equipment_uuid=EQUIPMENT_UUID, quantity=1)],
         steps=[Step(name="Melanger", rank=1)],
     )
     patched = recipe_patch_payload_to_domain(
         existing,
         RecipePatchSchema(ingredients=[{
-            "name": "Farine T80",
+            "ingredient_uuid": INGREDIENT_UUID,
             "quantity": 450,
             "unit": "g",
-            "season_months": {},
         }]),
     )
     assert patched.name == "Farine"
-    assert patched.ingredients[0].name == "Farine T80"
-    assert patched.equipment[0].name == "Saladier"
+    assert str(patched.ingredients[0].ingredient_uuid) == INGREDIENT_UUID
+    assert patched.ingredients[0].quantity == 450
+    assert str(patched.equipment[0].equipment_uuid) == EQUIPMENT_UUID
     assert patched.steps[0].name == "Melanger"
     assert patched.legacy_id == 42
-    assert patched.status == RecipeStatus.archived
+    assert patched.status == RecipeStatus.active
     assert patched.quality_status == RecipeQualityStatus.text_only
     assert patched.migration_metadata == {"source_table": "mkg_recipe"}
 
@@ -180,8 +196,8 @@ def test_update_payload_to_domain_preserves_unset_migration_metadata():
         status=RecipeStatus.archived,
         quality_status=RecipeQualityStatus.text_only,
         migration_metadata={"source_table": "mkg_recipe"},
-        ingredients=[RecipeIngredient(name="Farine de ble", quantity=500, unit="g", season_months={})],
-        equipment=[RecipeEquipment(name="Saladier", quantity=1)],
+        ingredients=[RecipeIngredient(ingredient_uuid=INGREDIENT_UUID, quantity=500, unit="g")],
+        equipment=[RecipeEquipment(equipment_uuid=EQUIPMENT_UUID, quantity=1)],
         steps=[Step(name="Melanger", rank=1)],
     )
 
@@ -190,7 +206,7 @@ def test_update_payload_to_domain_preserves_unset_migration_metadata():
     assert updated.name == "Farine T80"
     assert updated.favorite is True
     assert updated.legacy_id == 42
-    assert updated.status == RecipeStatus.archived
+    assert updated.status == RecipeStatus.active
     assert updated.quality_status == RecipeQualityStatus.text_only
     assert updated.migration_metadata == {"source_table": "mkg_recipe"}
 

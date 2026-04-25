@@ -15,10 +15,14 @@ from uuid import NAMESPACE_URL, uuid5
 
 from pymongo import MongoClient, ReplaceOne
 
+from domain.models.equipment import Equipment
 from domain.models.ingredient import Ingredient
+from domain.models.ingredient_group import IngredientGroup
+from domain.models.ingredient_rayon import IngredientRayon
 from domain.models.recipe import Recipe, RecipeQualityStatus, RecipeStatus
 from domain.models.recipe_equipment import RecipeEquipment
 from domain.models.recipe_ingredient import RecipeIngredient
+from domain.models.tag import Tag, TagCategory
 from domain.models.step import Step
 
 SqlValue = str | int | float | None
@@ -58,7 +62,11 @@ class ImportReport:
 
 @dataclass
 class ImportArtifacts:
+    ingredient_group_docs: list[MongoDocument]
+    ingredient_rayon_docs: list[MongoDocument]
+    tag_docs: list[MongoDocument]
     ingredient_docs: list[MongoDocument]
+    equipment_docs: list[MongoDocument]
     recipe_docs: list[MongoDocument]
     planner_docs: list[MongoDocument]
     report: ImportReport
@@ -71,7 +79,7 @@ def parse_args() -> argparse.Namespace:
 
     parser = argparse.ArgumentParser(description="Import legacy cuisine.karned.bzh SQL data into MongoDB.")
     parser.add_argument("--data-sql", type=Path, default=default_sql, help="Path to the MySQL data dump.")
-    parser.add_argument("--mongo-uri", default=os.getenv("MONGODB_URI", "mongodb://localhost:5971"))
+    parser.add_argument("--mongo-uri", default=os.getenv("MONGODB_URI", "mongodb://127.0.0.1:5971"))
     parser.add_argument("--db-name", default=os.getenv("MONGODB_DB_NAME", "recipe"))
     parser.add_argument("--report-path", type=Path, default=default_report)
     parser.add_argument("--dry-run", action="store_true", help="Parse and transform only, without writing MongoDB.")
@@ -228,10 +236,36 @@ def build_artifacts(tables: dict[str, list[SqlRow]], args: argparse.Namespace) -
         require_int(ingredient["id"]): legacy_uuid("mkg_recipe__ingredient", require_int(ingredient["id"]))
         for ingredient in tables["mkg_recipe__ingredient"]
     }
+    equipment_uuid_by_legacy_id = {
+        require_int(equipment["id"]): legacy_uuid("mkg_recipe__equipement", require_int(equipment["id"]))
+        for equipment in tables["mkg_recipe__equipement"]
+    }
+    ingredient_group_docs, group_uuid_by_name = build_ingredient_group_docs(
+        tables["mkg_recipe__ingredient"],
+        choices,
+        imported_at,
+    )
+    ingredient_rayon_docs, rayon_uuid_by_name = build_ingredient_rayon_docs(
+        tables["mkg_recipe__ingredient"],
+        choices,
+        imported_at,
+    )
+    tag_docs = build_default_tag_docs(imported_at)
 
     ingredient_docs = build_ingredient_docs(
         tables["mkg_recipe__ingredient"],
         choices,
+        group_uuid_by_name,
+        rayon_uuid_by_name,
+        imported_at,
+        report,
+    )
+    ingredient_season_by_uuid = {
+        str(doc["_id"]): {int(month): int(score) for month, score in doc.get("season_months", {}).items()}
+        for doc in ingredient_docs
+    }
+    equipment_docs = build_equipment_docs(
+        tables["mkg_recipe__equipement"],
         imported_at,
         report,
     )
@@ -243,6 +277,9 @@ def build_artifacts(tables: dict[str, list[SqlRow]], args: argparse.Namespace) -
         ingredients_by_id=ingredients_by_id,
         equipment_by_id=equipment_by_id,
         steps_by_id=steps_by_id,
+        ingredient_uuid_by_legacy_id=ingredient_uuid_by_legacy_id,
+        equipment_uuid_by_legacy_id=equipment_uuid_by_legacy_id,
+        ingredient_season_by_uuid=ingredient_season_by_uuid,
         choices=choices,
         imported_at=imported_at,
         report=report,
@@ -256,11 +293,15 @@ def build_artifacts(tables: dict[str, list[SqlRow]], args: argparse.Namespace) -
     )
 
     report.documents = {
+        "ingredient_group": len(ingredient_group_docs),
+        "ingredient_rayon": len(ingredient_rayon_docs),
+        "tag": len(tag_docs),
         "ingredient": len(ingredient_docs),
+        "equipment": len(equipment_docs),
         "recipe": len(recipe_docs),
         "legacy_meal_plan_entry": len(planner_docs),
     }
-    return ImportArtifacts(ingredient_docs, recipe_docs, planner_docs, report)
+    return ImportArtifacts(ingredient_group_docs, ingredient_rayon_docs, tag_docs, ingredient_docs, equipment_docs, recipe_docs, planner_docs, report)
 
 
 def build_choice_lookup(rows: list[SqlRow]) -> dict[int, str]:
@@ -282,9 +323,100 @@ def index_by_legacy_id(rows: list[SqlRow]) -> dict[int, SqlRow]:
     return indexed
 
 
+def build_ingredient_group_docs(
+    rows: list[SqlRow],
+    choices: dict[int, str],
+    imported_at: datetime,
+) -> tuple[list[MongoDocument], dict[str, str]]:
+    names = sorted({
+        name
+        for row in rows
+        if (name := choice_name(choices, row.get("mls__groupe"))) is not None
+    })
+    docs: list[MongoDocument] = []
+    uuid_by_name: dict[str, str] = {}
+    for index, name in enumerate(names, start=1):
+        group = IngredientGroup(
+            uuid=named_legacy_uuid("ingredient_group", name),
+            created_at=imported_at,
+            updated_at=imported_at,
+            name=name,
+            sort_order=index,
+        )
+        doc = entity_to_doc(group)
+        doc["migration_metadata"] = {
+            "source_name": LEGACY_SOURCE_NAME,
+            "source_table": "mkg_liste_choix",
+            "imported_at": imported_at.isoformat(),
+        }
+        docs.append(doc)
+        uuid_by_name[name] = doc["_id"]
+    return docs, uuid_by_name
+
+
+def build_ingredient_rayon_docs(
+    rows: list[SqlRow],
+    choices: dict[int, str],
+    imported_at: datetime,
+) -> tuple[list[MongoDocument], dict[str, str]]:
+    names = sorted({
+        name
+        for row in rows
+        if (name := choice_name(choices, row.get("mls__rayon"))) is not None
+    })
+    docs: list[MongoDocument] = []
+    uuid_by_name: dict[str, str] = {}
+    for index, name in enumerate(names, start=1):
+        rayon = IngredientRayon(
+            uuid=named_legacy_uuid("ingredient_rayon", name),
+            created_at=imported_at,
+            updated_at=imported_at,
+            name=name,
+            sort_order=index,
+        )
+        doc = entity_to_doc(rayon)
+        doc["migration_metadata"] = {
+            "source_name": LEGACY_SOURCE_NAME,
+            "source_table": "mkg_liste_choix",
+            "imported_at": imported_at.isoformat(),
+        }
+        docs.append(doc)
+        uuid_by_name[name] = doc["_id"]
+    return docs, uuid_by_name
+
+
+def build_default_tag_docs(imported_at: datetime) -> list[MongoDocument]:
+    defaults = [
+        ("végan", TagCategory.diet, "#34c759"),
+        ("végétarien", TagCategory.diet, "#30d158"),
+        ("grande tablée", TagCategory.occasion, "#ff9f0a"),
+        ("à l'assiette", TagCategory.service, "#007aff"),
+    ]
+    docs: list[MongoDocument] = []
+    for name, category, color in defaults:
+        tag = Tag(
+            uuid=named_legacy_uuid("tag", name),
+            created_at=imported_at,
+            updated_at=imported_at,
+            name=name,
+            category=category,
+            color=color,
+        )
+        doc = entity_to_doc(tag)
+        doc["migration_metadata"] = {
+            "source_name": LEGACY_SOURCE_NAME,
+            "source_table": "default_tags",
+            "imported_at": imported_at.isoformat(),
+        }
+        docs.append(doc)
+    return docs
+
+
 def build_ingredient_docs(
     rows: list[SqlRow],
     choices: dict[int, str],
+    group_uuid_by_name: dict[str, str],
+    rayon_uuid_by_name: dict[str, str],
     imported_at: datetime,
     report: ImportReport,
 ) -> list[MongoDocument]:
@@ -298,13 +430,15 @@ def build_ingredient_docs(
 
         created_at = parse_datetime(row.get("dc")) or imported_at
         updated_at = parse_datetime(row.get("dm")) or created_at
+        group_name = choice_name(choices, row.get("mls__groupe"))
+        rayon_name = choice_name(choices, row.get("mls__rayon"))
         ingredient = Ingredient(
             uuid=legacy_uuid("mkg_recipe__ingredient", legacy_id),
             created_at=created_at,
             updated_at=updated_at,
             name=name,
-            rayon=choice_name(choices, row.get("mls__rayon")),
-            group=choice_name(choices, row.get("mls__groupe")),
+            rayon_uuid=rayon_uuid_by_name.get(rayon_name) if rayon_name is not None else None,
+            group_uuid=group_uuid_by_name.get(group_name) if group_name is not None else None,
             unit=choice_name(choices, row.get("mls__unite")),
             quantity=positive_float(row.get("portion")),
             season_months=season_months(row),
@@ -328,6 +462,46 @@ def build_ingredient_docs(
     return docs
 
 
+def build_equipment_docs(
+    rows: list[SqlRow],
+    imported_at: datetime,
+    report: ImportReport,
+) -> list[MongoDocument]:
+    docs: list[MongoDocument] = []
+    for row in sorted(rows, key=lambda item: require_int(item["id"])):
+        legacy_id = require_int(row["id"])
+        name = clean_text(row.get("nom"))
+        if name is None:
+            name = f"Equipment legacy {legacy_id}"
+            increment(report.warnings, "equipment_missing_name")
+
+        created_at = parse_datetime(row.get("dc")) or imported_at
+        updated_at = parse_datetime(row.get("dm")) or created_at
+        equipment = Equipment(
+            uuid=legacy_uuid("mkg_recipe__equipement", legacy_id),
+            created_at=created_at,
+            updated_at=updated_at,
+            name=name,
+        )
+        doc = entity_to_doc(equipment)
+        doc.update(
+            {
+                "legacy_id": legacy_id,
+                "status": legacy_status(row),
+                "created_at_legacy": datetime_to_json(parse_datetime(row.get("dc"))),
+                "updated_at_legacy": datetime_to_json(parse_datetime(row.get("dm"))),
+                "migration_metadata": {
+                    "source_name": LEGACY_SOURCE_NAME,
+                    "source_table": "mkg_recipe__equipement",
+                    "source_keygen": clean_text(row.get("keygen")),
+                    "imported_at": imported_at.isoformat(),
+                },
+            }
+        )
+        docs.append(doc)
+    return docs
+
+
 def build_recipe_docs(
     recipe_rows: list[SqlRow],
     ingredient_links: list[SqlRow],
@@ -336,12 +510,21 @@ def build_recipe_docs(
     ingredients_by_id: dict[int, SqlRow],
     equipment_by_id: dict[int, SqlRow],
     steps_by_id: dict[int, SqlRow],
+    ingredient_uuid_by_legacy_id: dict[int, str],
+    equipment_uuid_by_legacy_id: dict[int, str],
+    ingredient_season_by_uuid: dict[str, dict[int, int]],
     choices: dict[int, str],
     imported_at: datetime,
     report: ImportReport,
 ) -> list[MongoDocument]:
-    ingredient_lines = group_recipe_ingredients(ingredient_links, ingredients_by_id, choices, report)
-    equipment_lines = group_recipe_equipment(equipment_links, equipment_by_id)
+    ingredient_lines = group_recipe_ingredients(
+        ingredient_links,
+        ingredients_by_id,
+        ingredient_uuid_by_legacy_id,
+        choices,
+        report,
+    )
+    equipment_lines = group_recipe_equipment(equipment_links, equipment_by_id, equipment_uuid_by_legacy_id, report)
     step_lines = group_recipe_steps(step_links, steps_by_id)
 
     docs: list[MongoDocument] = []
@@ -371,6 +554,8 @@ def build_recipe_docs(
             difficulty=level_1_to_5(row.get("niveau_difficulte")),
             price=level_1_to_5(row.get("niveau_prix")),
             favorite=yes_no(row.get("favori")),
+            tag_uuids=[],
+            season_months=calculate_recipe_season(ingredients, ingredient_season_by_uuid),
             status=RecipeStatus.archived if legacy_status(row) == "archived" else RecipeStatus.active,
             quality_status=quality_status,
             legacy_id=legacy_id,
@@ -397,6 +582,7 @@ def build_recipe_docs(
 def group_recipe_ingredients(
     links: list[SqlRow],
     ingredients_by_id: dict[int, SqlRow],
+    ingredient_uuid_by_legacy_id: dict[int, str],
     choices: dict[int, str],
     report: ImportReport,
 ) -> dict[int, list[RecipeIngredient]]:
@@ -413,19 +599,16 @@ def group_recipe_ingredients(
             continue
 
         ingredient_row = ingredients_by_id.get(ingredient_id)
+        ingredient_uuid = ingredient_uuid_by_legacy_id.get(ingredient_id)
+        if ingredient_uuid is None:
+            ingredient_uuid = legacy_uuid("mkg_recipe__ingredient", ingredient_id)
+            increment(report.warnings, "recipe_ingredient_link_unknown_ingredient_uuid")
+
         if ingredient_row is None:
             increment(report.warnings, "recipe_ingredient_link_unknown_ingredient")
-            name = f"Ingredient legacy {ingredient_id}"
             unit = "x"
-            season = {}
-            rayon = None
-            group = None
         else:
-            name = clean_text(ingredient_row.get("nom")) or f"Ingredient legacy {ingredient_id}"
             unit = choice_name(choices, ingredient_row.get("mls__unite")) or "x"
-            season = season_months(ingredient_row)
-            rayon = choice_name(choices, ingredient_row.get("mls__rayon"))
-            group = choice_name(choices, ingredient_row.get("mls__groupe"))
 
         quantity = positive_float(link.get("nb_unite"))
         if quantity is None:
@@ -434,12 +617,9 @@ def group_recipe_ingredients(
 
         grouped[recipe_id].append(
             RecipeIngredient(
-                name=name,
+                ingredient_uuid=ingredient_uuid,
                 quantity=quantity,
                 unit=unit,
-                season_months=season,
-                rayon=rayon,
-                group=group,
             )
         )
     return grouped
@@ -448,6 +628,8 @@ def group_recipe_ingredients(
 def group_recipe_equipment(
     links: list[SqlRow],
     equipment_by_id: dict[int, SqlRow],
+    equipment_uuid_by_legacy_id: dict[int, str],
+    report: ImportReport,
 ) -> dict[int, list[RecipeEquipment]]:
     grouped: dict[int, list[RecipeEquipment]] = defaultdict(list)
     sorted_links = sorted(links, key=lambda item: (optional_int(item.get("recipe_id")) or 0, require_int(item["id"])))
@@ -458,16 +640,18 @@ def group_recipe_equipment(
         recipe_id = positive_int(link.get("recipe_id"))
         equipment_id = positive_int(link.get("recipe__equipement_id"))
         if recipe_id is None or equipment_id is None:
+            increment(report.warnings, "recipe_equipment_link_missing_reference")
             continue
 
-        equipment_row = equipment_by_id.get(equipment_id)
-        name = f"Equipment legacy {equipment_id}"
-        if equipment_row is not None:
-            name = clean_text(equipment_row.get("nom")) or name
+        if equipment_by_id.get(equipment_id) is None:
+            increment(report.warnings, "recipe_equipment_link_unknown_equipment")
 
         grouped[recipe_id].append(
             RecipeEquipment(
-                name=name,
+                equipment_uuid=equipment_uuid_by_legacy_id.get(
+                    equipment_id,
+                    legacy_uuid("mkg_recipe__equipement", equipment_id),
+                ),
                 quantity=positive_float(link.get("nb_unite")),
             )
         )
@@ -565,7 +749,11 @@ def import_into_mongo(artifacts: ImportArtifacts, args: argparse.Namespace) -> N
 
     db = client[args.db_name]
     collections = {
+        "ingredient_group": artifacts.ingredient_group_docs,
+        "ingredient_rayon": artifacts.ingredient_rayon_docs,
+        "tag": artifacts.tag_docs,
         "ingredient": artifacts.ingredient_docs,
+        "equipment": artifacts.equipment_docs,
         "recipe": artifacts.recipe_docs,
         "legacy_meal_plan_entry": artifacts.planner_docs,
     }
@@ -579,7 +767,17 @@ def import_into_mongo(artifacts: ImportArtifacts, args: argparse.Namespace) -> N
         artifacts.report.mongo_result[collection_name] = result
 
     db["ingredient"].create_index("legacy_id", unique=True, sparse=True, name="legacy_id_unique")
+    db["ingredient"].create_index("group_uuid", name="group_uuid")
+    db["ingredient"].create_index("rayon_uuid", name="rayon_uuid")
+    db["ingredient_group"].create_index("slug", unique=True, name="slug_unique")
+    db["ingredient_rayon"].create_index("slug", unique=True, name="slug_unique")
+    db["equipment"].create_index("legacy_id", unique=True, sparse=True, name="legacy_id_unique")
+    db["tag"].create_index("slug", unique=True, name="slug_unique")
     db["recipe"].create_index("legacy_id", unique=True, sparse=True, name="legacy_id_unique")
+    db["recipe"].create_index("ingredients.ingredient_uuid", name="ingredients_ingredient_uuid")
+    db["recipe"].create_index("equipment.equipment_uuid", name="equipment_equipment_uuid")
+    db["recipe"].create_index("tag_uuids", name="tag_uuids")
+    db["recipe"].create_index("season_months", name="season_months")
     db["legacy_meal_plan_entry"].create_index("legacy_id", unique=True, sparse=True, name="legacy_id_unique")
     db["legacy_meal_plan_entry"].create_index("date", name="date")
 
@@ -649,6 +847,32 @@ def legacy_status(row: SqlRow) -> str:
 
 def legacy_uuid(table: str, legacy_id: int) -> str:
     return str(uuid5(LEGACY_NAMESPACE, f"{table}:{legacy_id}"))
+
+
+def named_legacy_uuid(kind: str, name: str) -> str:
+    normalized = re.sub(r"\s+", " ", name.strip().casefold())
+    return str(uuid5(LEGACY_NAMESPACE, f"{kind}:{normalized}"))
+
+
+def calculate_recipe_season(
+    ingredients: list[RecipeIngredient],
+    ingredient_season_by_uuid: dict[str, dict[int, int]],
+) -> dict[int, int]:
+    ingredient_seasons = [
+        season
+        for ingredient in ingredients
+        if (season := ingredient_season_by_uuid.get(str(ingredient.ingredient_uuid)))
+    ]
+    if not ingredient_seasons:
+        return {month: 1 for month in range(1, 13)}
+
+    aggregated: dict[int, int] = {}
+    for month in range(1, 13):
+        scores = [season[month] for season in ingredient_seasons if month in season]
+        if scores:
+            score = round(sum(scores) / len(scores))
+            aggregated[month] = max(1, min(3, score))
+    return aggregated
 
 
 def require_int(value: SqlValue) -> int:

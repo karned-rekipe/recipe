@@ -2,6 +2,9 @@ import pytest
 
 from domain.models.ingredient import Ingredient
 
+GROUP_UUID = "01951234-5678-7abc-def0-000000000201"
+RAYON_UUID = "01951234-5678-7abc-def0-000000000202"
+
 
 def make_ingredient(**kwargs) -> Ingredient:
     kwargs.setdefault("name", "Tomate")
@@ -66,8 +69,8 @@ def test_season_months_score_zero_raises():
 
 def test_optional_fields_default_none():
     ingredient = make_ingredient()
-    assert ingredient.rayon is None
-    assert ingredient.group is None
+    assert ingredient.rayon_uuid is None
+    assert ingredient.group_uuid is None
     assert ingredient.green_score is None
     assert ingredient.unit is None
     assert ingredient.quantity is None
@@ -75,15 +78,15 @@ def test_optional_fields_default_none():
 
 def test_all_fields():
     ingredient = make_ingredient(
-        rayon="fruits et légumes",
-        group="légumes",
+        rayon_uuid=RAYON_UUID,
+        group_uuid=GROUP_UUID,
         green_score=80,
         unit="g",
         quantity=100.0,
         season_months={7: 3, 8: 3},
     )
-    assert ingredient.rayon == "fruits et légumes"
-    assert ingredient.group == "légumes"
+    assert str(ingredient.rayon_uuid) == RAYON_UUID
+    assert str(ingredient.group_uuid) == GROUP_UUID
     assert ingredient.green_score == 80
     assert ingredient.unit == "g"
     assert ingredient.quantity == 100.0

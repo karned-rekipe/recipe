@@ -11,13 +11,21 @@ from domain.models.recipe import MealType, Recipe, RecipeQualityStatus, RecipeSt
 from domain.models.recipe_equipment import RecipeEquipment
 from domain.models.recipe_ingredient import RecipeIngredient
 from domain.models.step import Step
+from uuid6 import UUID
 
-from .ingredient_schema import IngredientCreateSchema
+from .ingredient_group_schema import IngredientGroupSchema
+from .ingredient_rayon_schema import IngredientRayonSchema
 from .source_schema import SourceSchema
 from .step_schema import StepSchema
+from .tag_schema import TagSchema
 
 
-class RecipeIngredientWriteSchema(IngredientCreateSchema):
+class RecipeIngredientWriteSchema(BaseModel):
+    ingredient_uuid: StdUUID = Field(
+        ...,
+        description="UUID of the ingredient catalog item.",
+        examples=["01951234-5678-7abc-def0-123456789abc"],
+    )
     quantity: float = Field(
         ...,
         description="Quantity required for the recipe.",
@@ -42,40 +50,44 @@ class RecipeIngredientWriteSchema(IngredientCreateSchema):
 class RecipeIngredientSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    ingredient_uuid: StdUUID = Field(
+        ...,
+        description="UUID of the ingredient catalog item.",
+        examples=["01951234-5678-7abc-def0-123456789abc"],
+    )
     name: str = Field(..., description="Ingredient name.", examples=["Tomate"])
     quantity: float = Field(..., description="Quantity required for the recipe.")
     unit: str = Field(..., description="Unit of measure.")
     season_months: dict[int, int] = Field(default_factory=dict, description="Seasonality map.")
-    rayon: str | None = Field(None, description="Shelf/aisle category.")
-    group: str | None = Field(None, description="Food group.")
+    rayon_uuid: StdUUID | None = Field(None, description="Shelf/aisle UUID.")
+    group_uuid: StdUUID | None = Field(None, description="Food group UUID.")
+    rayon: IngredientRayonSchema | None = Field(None, description="Hydrated shelf/aisle.")
+    group: IngredientGroupSchema | None = Field(None, description="Hydrated food group.")
     green_score: int | None = Field(None, description="Environmental score.")
 
 
 class RecipeEquipmentWriteSchema(BaseModel):
-    name: str = Field(
+    equipment_uuid: StdUUID = Field(
         ...,
-        description="Equipment name.",
-        min_length=1,
-        examples=["Four", "Saladier"],
+        description="UUID of the equipment catalog item.",
+        examples=["01951234-5678-7abc-def0-123456789abc"],
     )
     quantity: float | None = Field(
-        None,
+        1,
         description="Optional quantity of required equipment.",
         ge=0,
         examples=[1.0, 2.0],
     )
 
-    @field_validator("name", mode="before")
-    @classmethod
-    def name_not_empty(cls, v: str) -> str:
-        if isinstance(v, str) and not v.strip():
-            raise ValueError("Name cannot be empty")
-        return v
-
 
 class RecipeEquipmentSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    equipment_uuid: StdUUID = Field(
+        ...,
+        description="UUID of the equipment catalog item.",
+        examples=["01951234-5678-7abc-def0-123456789abc"],
+    )
     name: str = Field(..., description="Equipment name.", examples=["Four"])
     quantity: float | None = Field(None, description="Optional quantity of required equipment.")
 
@@ -129,6 +141,7 @@ class RecipeCreateSchema(BaseModel):
     main_image: str | None = Field(None, description="URI de l'image principale.")
     secondary_images: list[str] = Field(default_factory=list, description="URIs des images secondaires.")
     favorite: bool = Field(False, description="Indique si la recette est favorite.")
+    tag_uuids: list[StdUUID] = Field(default_factory=list, description="Liste des UUID de tags.")
     status: RecipeStatus = Field(RecipeStatus.active, description="Statut de cycle de vie de la recette.")
     quality_status: RecipeQualityStatus = Field(
         RecipeQualityStatus.structured,
@@ -147,17 +160,15 @@ class RecipeCreateSchema(BaseModel):
         examples=[[{"name": "Marmiton", "description": "Recette originale", "uri": "https://www.marmiton.org/recettes/recette_pizza.html"}]],
     )
     ingredients: list[RecipeIngredientWriteSchema] = Field(
-        ...,
-        min_length=1,
-        description="Liste embarquee des ingredients de la recette.",
+        default_factory=list,
+        description="Liste des references ingredients de la recette.",
     )
     equipment: list[RecipeEquipmentWriteSchema] = Field(
         default_factory=list,
-        description="Liste embarquee des equipements necessaires.",
+        description="Liste des references equipements necessaires.",
     )
     steps: list[RecipeStepWriteSchema] = Field(
-        ...,
-        min_length=1,
+        default_factory=list,
         description="Liste ordonnee des etapes de la recette.",
     )
 
@@ -186,6 +197,7 @@ class RecipePatchSchema(BaseModel):
     main_image: str | None = None
     secondary_images: list[str] | None = None
     favorite: bool | None = None
+    tag_uuids: list[StdUUID] | None = None
     status: RecipeStatus | None = None
     quality_status: RecipeQualityStatus | None = None
     legacy_id: int | None = Field(None, ge=1)
@@ -196,9 +208,9 @@ class RecipePatchSchema(BaseModel):
         None,
         examples=[[{"name": "Marmiton", "description": "Recette originale", "uri": "https://www.marmiton.org/recettes/recette_pizza.html"}]],
     )
-    ingredients: list[RecipeIngredientWriteSchema] | None = Field(None, min_length=1)
+    ingredients: list[RecipeIngredientWriteSchema] | None = None
     equipment: list[RecipeEquipmentWriteSchema] | None = None
-    steps: list[RecipeStepWriteSchema] | None = Field(None, min_length=1)
+    steps: list[RecipeStepWriteSchema] | None = None
 
     @field_validator("name", mode="before")
     @classmethod
@@ -218,6 +230,7 @@ class RecipePatchSchema(BaseModel):
             "secondary_images": self.secondary_images,
             "sources": self.sources,
             "favorite": self.favorite,
+            "tag_uuids": self.tag_uuids,
             "status": self.status,
             "quality_status": self.quality_status,
             "migration_metadata": self.migration_metadata,
@@ -248,6 +261,9 @@ class RecipeSchema(BaseSchema):
     main_image: str | None = None
     secondary_images: list[str] = Field(default_factory=list)
     favorite: bool = False
+    tag_uuids: list[StdUUID] = Field(default_factory=list)
+    tags: list[TagSchema] = Field(default_factory=list)
+    season_months: dict[int, int] = Field(default_factory=dict)
     status: RecipeStatus = RecipeStatus.active
     quality_status: RecipeQualityStatus = RecipeQualityStatus.structured
     legacy_id: int | None = None
@@ -261,11 +277,11 @@ class RecipeSchema(BaseSchema):
     )
     ingredients: list[RecipeIngredientSchema] = Field(
         default_factory=list,
-        description="Liste embarquee des ingredients.",
+        description="Liste hydratee des ingredients.",
     )
     equipment: list[RecipeEquipmentSchema] = Field(
         default_factory=list,
-        description="Liste embarquee des equipements.",
+        description="Liste hydratee des equipements.",
     )
     steps: list[StepSchema] = Field(
         default_factory=list,
@@ -294,6 +310,7 @@ class RecipeSchema(BaseSchema):
 
 
 def recipe_create_payload_to_domain(payload: RecipeCreateSchema) -> Recipe:
+    ingredients = [_to_recipe_ingredient(ingredient) for ingredient in payload.ingredients]
     return Recipe(
         name=payload.name,
         description=payload.description,
@@ -307,20 +324,22 @@ def recipe_create_payload_to_domain(payload: RecipeCreateSchema) -> Recipe:
         main_image=payload.main_image,
         secondary_images=list(payload.secondary_images),
         favorite=payload.favorite,
-        status=payload.status,
+        tag_uuids=[UUID(str(tag_uuid)) for tag_uuid in payload.tag_uuids],
+        status=_resolve_recipe_status(payload.status, payload.model_fields_set, ingredients),
         quality_status=payload.quality_status,
         legacy_id=payload.legacy_id,
         created_at_legacy=payload.created_at_legacy,
         updated_at_legacy=payload.updated_at_legacy,
         migration_metadata=dict(payload.migration_metadata),
         sources=[Source(**source.model_dump()) for source in payload.sources],
-        ingredients=[_to_recipe_ingredient(ingredient) for ingredient in payload.ingredients],
+        ingredients=ingredients,
         equipment=[_to_recipe_equipment(item) for item in payload.equipment],
         steps=[_to_step(step) for step in payload.steps],
     )
 
 
 def recipe_update_payload_to_domain(existing: Recipe, payload: RecipeUpdateSchema) -> Recipe:
+    ingredients = [_to_recipe_ingredient(ingredient) for ingredient in payload.ingredients]
     return Recipe(
         uuid=existing.uuid,
         created_at=existing.created_at,
@@ -342,7 +361,9 @@ def recipe_update_payload_to_domain(existing: Recipe, payload: RecipeUpdateSchem
         main_image=payload.main_image,
         secondary_images=list(payload.secondary_images),
         favorite=payload.favorite if "favorite" in payload.model_fields_set else existing.favorite,
-        status=payload.status if "status" in payload.model_fields_set else existing.status,
+        tag_uuids=[UUID(str(tag_uuid)) for tag_uuid in payload.tag_uuids],
+        season_months=dict(existing.season_months),
+        status=_resolve_recipe_status(payload.status, payload.model_fields_set, ingredients),
         quality_status=payload.quality_status if "quality_status" in payload.model_fields_set else existing.quality_status,
         legacy_id=payload.legacy_id if "legacy_id" in payload.model_fields_set else existing.legacy_id,
         created_at_legacy=payload.created_at_legacy if "created_at_legacy" in payload.model_fields_set else existing.created_at_legacy,
@@ -351,7 +372,7 @@ def recipe_update_payload_to_domain(existing: Recipe, payload: RecipeUpdateSchem
         if "migration_metadata" in payload.model_fields_set
         else dict(existing.migration_metadata),
         sources=[Source(**source.model_dump()) for source in payload.sources],
-        ingredients=[_to_recipe_ingredient(ingredient) for ingredient in payload.ingredients],
+        ingredients=ingredients,
         equipment=[_to_recipe_equipment(item) for item in payload.equipment],
         steps=[_to_step(step) for step in payload.steps],
     )
@@ -417,7 +438,11 @@ def recipe_patch_payload_to_domain(existing: Recipe, payload: RecipePatchSchema)
         main_image=payload.main_image if "main_image" in fields_set else existing.main_image,
         secondary_images=secondary_images,
         favorite=payload.favorite if "favorite" in fields_set else existing.favorite,
-        status=payload.status if "status" in fields_set else existing.status,
+        tag_uuids=[UUID(str(tag_uuid)) for tag_uuid in payload.tag_uuids]
+        if "tag_uuids" in fields_set and payload.tag_uuids is not None
+        else list(existing.tag_uuids),
+        season_months=dict(existing.season_months),
+        status=_resolve_recipe_status(payload.status, fields_set, ingredients),
         quality_status=payload.quality_status if "quality_status" in fields_set else existing.quality_status,
         legacy_id=payload.legacy_id if "legacy_id" in fields_set else existing.legacy_id,
         created_at_legacy=payload.created_at_legacy if "created_at_legacy" in fields_set else existing.created_at_legacy,
@@ -431,12 +456,29 @@ def recipe_patch_payload_to_domain(existing: Recipe, payload: RecipePatchSchema)
 
 
 def _to_recipe_ingredient(payload: RecipeIngredientWriteSchema) -> RecipeIngredient:
-    return RecipeIngredient(**payload.model_dump())
+    return RecipeIngredient(
+        ingredient_uuid=UUID(str(payload.ingredient_uuid)),
+        quantity=payload.quantity,
+        unit=payload.unit,
+    )
 
 
 def _to_recipe_equipment(payload: RecipeEquipmentWriteSchema) -> RecipeEquipment:
-    return RecipeEquipment(**payload.model_dump())
+    return RecipeEquipment(
+        equipment_uuid=UUID(str(payload.equipment_uuid)),
+        quantity=payload.quantity,
+    )
 
 
 def _to_step(payload: RecipeStepWriteSchema) -> Step:
     return Step(**payload.model_dump())
+
+
+def _resolve_recipe_status(
+    payload_status: RecipeStatus | None,
+    fields_set: set[str],
+    ingredients: list[RecipeIngredient],
+) -> RecipeStatus:
+    if "status" in fields_set and payload_status == RecipeStatus.archived:
+        return RecipeStatus.archived
+    return RecipeStatus.active if ingredients else RecipeStatus.draft

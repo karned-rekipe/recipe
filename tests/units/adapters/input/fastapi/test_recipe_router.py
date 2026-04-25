@@ -4,8 +4,18 @@ from httpx import ASGITransport, AsyncClient
 
 from adapters.input.fastapi.dependencies import inject_tenant_uri, require_auth
 from adapters.input.fastapi.routers import AdminRouter, RecipeRouter
+from adapters.output.memory.repositories.equipment_repository import InMemoryEquipmentRepository
+from adapters.output.memory.repositories.ingredient_repository import InMemoryIngredientRepository
 from application.services.recipe_service import RecipeService
+from domain.models.equipment import Equipment
+from domain.models.ingredient import Ingredient
 from infrastructure.purge_registry import PurgeRegistry
+from uuid6 import UUID
+
+INGREDIENT_UUID = "01951234-5678-7abc-def0-000000000101"
+INGREDIENT_2_UUID = "01951234-5678-7abc-def0-000000000103"
+EQUIPMENT_UUID = "01951234-5678-7abc-def0-000000000102"
+EQUIPMENT_2_UUID = "01951234-5678-7abc-def0-000000000104"
 
 
 def _complete_payload(**kwargs) -> dict:
@@ -17,15 +27,11 @@ def _complete_payload(**kwargs) -> dict:
         "secondary_images": ["https://example.com/recipe-2.jpg"],
         "sources": [{"name": "Carnet", "description": "Version familiale", "uri": "https://example.com/farine"}],
         "ingredients": [{
-            "name": "Farine de ble",
+            "ingredient_uuid": INGREDIENT_UUID,
             "quantity": 500,
             "unit": "g",
-            "season_months": {},
-            "group": "feculents",
-            "rayon": "epicerie",
-            "green_score": 80,
         }],
-        "equipment": [{"name": "Saladier", "quantity": 1}],
+        "equipment": [{"equipment_uuid": EQUIPMENT_UUID, "quantity": 1}],
         "steps": [{
             "name": "Melanger",
             "description": "Melanger tous les ingredients.",
@@ -41,8 +47,37 @@ def _complete_payload(**kwargs) -> dict:
 
 
 @pytest.fixture
-def service(repo, logger):
-    return RecipeService(repo, logger)
+def ingredient_repo():
+    repository = InMemoryIngredientRepository()
+    ingredients = [
+        Ingredient(uuid=UUID(INGREDIENT_UUID), name="Farine de ble", group="feculents", rayon="epicerie", green_score=80, unit="g"),
+        Ingredient(uuid=UUID(INGREDIENT_2_UUID), name="Farine complete", group="feculents", rayon="epicerie", green_score=75, unit="g"),
+    ]
+    for ingredient in ingredients:
+        repository._store[ingredient.uuid] = ingredient
+    return repository
+
+
+@pytest.fixture
+def equipment_repo():
+    repository = InMemoryEquipmentRepository()
+    equipment_items = [
+        Equipment(uuid=UUID(EQUIPMENT_UUID), name="Saladier"),
+        Equipment(uuid=UUID(EQUIPMENT_2_UUID), name="Robot"),
+    ]
+    for equipment in equipment_items:
+        repository._store[equipment.uuid] = equipment
+    return repository
+
+
+@pytest.fixture
+def service(repo, ingredient_repo, equipment_repo, logger):
+    return RecipeService(
+        repo,
+        logger,
+        ingredient_repository=ingredient_repo,
+        equipment_repository=equipment_repo,
+    )
 
 
 @pytest.fixture
@@ -88,6 +123,54 @@ async def test_create_rejects_incomplete_recipe(client):
     assert response.status_code == 422
 
 
+async def test_create_minimal_recipe_returns_draft(client):
+    response = await client.post("/v1/recipes/", json={"name": "Idee", "servings": 2})
+    assert response.status_code == 201
+
+    uuid = response.json()["data"]["uuid"]
+    data = (await client.get(f"/v1/recipes/{uuid}")).json()["data"]
+
+    assert data["status"] == "draft"
+    assert data["ingredients"] == []
+    assert data["equipment"] == []
+    assert data["steps"] == []
+
+
+async def test_create_recipe_with_ingredient_returns_active(client):
+    response = await client.post("/v1/recipes/", json=_complete_payload())
+    uuid = response.json()["data"]["uuid"]
+    data = (await client.get(f"/v1/recipes/{uuid}")).json()["data"]
+    assert data["status"] == "active"
+
+
+async def test_create_rejects_incomplete_ingredient_line(client):
+    payload = _complete_payload(ingredients=[{"ingredient_uuid": INGREDIENT_UUID, "quantity": 500}])
+    response = await client.post("/v1/recipes/", json=payload)
+    assert response.status_code == 422
+
+
+async def test_create_defaults_equipment_quantity(client):
+    payload = _complete_payload(equipment=[{"equipment_uuid": EQUIPMENT_UUID}])
+    response = await client.post("/v1/recipes/", json=payload)
+    uuid = response.json()["data"]["uuid"]
+    data = (await client.get(f"/v1/recipes/{uuid}")).json()["data"]
+    assert data["equipment"][0]["quantity"] == 1
+
+
+async def test_create_allows_no_steps(client):
+    response = await client.post("/v1/recipes/", json=_complete_payload(steps=[]))
+    assert response.status_code == 201
+    uuid = response.json()["data"]["uuid"]
+    data = (await client.get(f"/v1/recipes/{uuid}")).json()["data"]
+    assert data["steps"] == []
+
+
+async def test_create_rejects_partial_step_without_title(client):
+    payload = _complete_payload(steps=[{"description": "Melanger.", "rank": 1}])
+    response = await client.post("/v1/recipes/", json=payload)
+    assert response.status_code == 422
+
+
 async def test_get_found(client, created):
     uuid = created["uuid"]
     response = await client.get(f"/v1/recipes/{uuid}")
@@ -113,10 +196,9 @@ async def test_update_returns_204(client, created):
         json=_complete_payload(
             name="Farine complete",
             ingredients=[{
-                "name": "Farine complete",
+                "ingredient_uuid": INGREDIENT_2_UUID,
                 "quantity": 500,
                 "unit": "g",
-                "season_months": {},
             }],
         ),
     )
@@ -131,7 +213,7 @@ async def test_update_replaces_full_aggregate_and_preserves_creation_metadata(cl
         f"/v1/recipes/{uuid}",
         json=_complete_payload(
             name="Farine complete",
-            equipment=[{"name": "Robot", "quantity": 1}],
+            equipment=[{"equipment_uuid": EQUIPMENT_2_UUID, "quantity": 1}],
             steps=[{
                 "name": "Petrir",
                 "description": "Petrir la pate.",
@@ -173,7 +255,7 @@ async def test_update_preserves_migration_metadata_when_omitted(client):
     assert after["name"] == "Farine T80"
     assert after["legacy_id"] == 42
     assert after["favorite"] is True
-    assert after["status"] == "archived"
+    assert after["status"] == "active"
     assert after["quality_status"] == "text_only"
     assert after["migration_metadata"] == {"source_table": "mkg_recipe"}
 
@@ -189,16 +271,15 @@ async def test_patch_preserves_unset_sections(client, created):
     await client.patch(
         f"/v1/recipes/{uuid}",
         json={"ingredients": [{
-            "name": "Farine T80",
+            "ingredient_uuid": INGREDIENT_2_UUID,
             "quantity": 450,
             "unit": "g",
-            "season_months": {},
         }]},
     )
     response = await client.get(f"/v1/recipes/{uuid}")
     data = response.json()["data"]
     assert data["name"] == "Farine"
-    assert data["ingredients"][0]["name"] == "Farine T80"
+    assert data["ingredients"][0]["name"] == "Farine complete"
     assert data["equipment"][0]["name"] == "Saladier"
     assert data["steps"][0]["name"] == "Melanger"
 
@@ -279,6 +360,18 @@ async def test_list_filter_no_match(client):
     data = response.json()
     assert data["data"] == []
     assert data["pagination"]["total"] == 0
+
+
+async def test_list_meal_planner_eligible_excludes_drafts(client):
+    await client.post("/v1/recipes/", json={"name": "Brouillon", "servings": 1})
+    await client.post("/v1/recipes/", json=_complete_payload(name="Active"))
+
+    response = await client.get("/v1/recipes/", params={"meal_planner_eligible": True})
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data["pagination"]["total"] == 1
+    assert data["data"][0]["name"] == "Active"
 
 
 async def test_duplicate_returns_201(client, created):

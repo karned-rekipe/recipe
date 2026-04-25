@@ -5,8 +5,13 @@ from httpx import AsyncClient, ASGITransport
 from adapters.input.fastapi.dependencies import inject_tenant_uri, require_auth
 from adapters.input.fastapi.routers import IngredientRouter
 from adapters.output.memory.repositories.ingredient_repository import InMemoryIngredientRepository
+from adapters.output.memory.repositories.recipe_repository import InMemoryRecipeRepository
 from application.services.ingredient_service import IngredientService
+from application.services.recipe_service import RecipeService
+from domain.models.recipe import Recipe
+from domain.models.recipe_ingredient import RecipeIngredient
 from infrastructure.purge_registry import PurgeRegistry
+from uuid6 import UUID
 
 
 def _payload(**kwargs) -> dict:
@@ -24,11 +29,16 @@ def service(ingredient_repo, logger):
 
 
 @pytest.fixture
-def app(service, logger):
+def recipe_service(ingredient_repo, logger):
+    return RecipeService(InMemoryRecipeRepository(), logger, ingredient_repository=ingredient_repo)
+
+
+@pytest.fixture
+def app(service, recipe_service, logger):
     fastapi_app = FastAPI()
     registry = PurgeRegistry()
     registry.register("ingredients", service.purge)
-    fastapi_app.include_router(IngredientRouter(service, logger).router)
+    fastapi_app.include_router(IngredientRouter(service, logger, recipe_service).router)
     fastapi_app.dependency_overrides[inject_tenant_uri] = lambda: None
     fastapi_app.dependency_overrides[require_auth] = lambda: {"sub": "test-user"}
     return fastapi_app
@@ -155,6 +165,41 @@ async def test_list_filter_by_name(client):
     data = response.json()
     assert len(data["data"]) == 1
     assert data["data"][0]["name"] == "Tomate cerise"
+
+
+async def test_list_duplicates_by_normalized_name(client):
+    await client.post("/v1/ingredients/", json=_payload(name="Crème fraîche"))
+    await client.post("/v1/ingredients/", json=_payload(name="Creme fraiche"))
+
+    response = await client.get("/v1/ingredients/duplicates")
+
+    assert response.status_code == 200
+    groups = response.json()["data"]
+    assert groups[0]["normalized_name"] == "creme fraiche"
+    assert len(groups[0]["items"]) == 2
+
+
+async def test_merge_duplicates_rewrites_recipes_and_soft_deletes_duplicate(client, recipe_service):
+    target = (await client.post("/v1/ingredients/", json=_payload(name="Crème fraîche"))).json()["data"]["uuid"]
+    duplicate = (await client.post("/v1/ingredients/", json=_payload(name="Creme fraiche"))).json()["data"]["uuid"]
+    recipe = await recipe_service.create(Recipe(
+        name="Sauce",
+        servings=2,
+        ingredients=[RecipeIngredient(ingredient_uuid=UUID(duplicate), quantity=1, unit="g")],
+    ))
+
+    response = await client.post(
+        "/v1/ingredients/duplicates/merge",
+        json={"target_uuid": target, "duplicate_uuids": [duplicate]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["updated_recipe_count"] == 1
+    assert (await client.get(f"/v1/ingredients/{duplicate}")).status_code == 404
+
+    updated = await recipe_service.read(recipe.uuid)
+    assert updated is not None
+    assert str(updated.ingredients[0].ingredient_uuid) == target
 
 
 # --- POST /{uuid}/duplicate ---

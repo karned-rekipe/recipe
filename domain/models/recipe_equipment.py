@@ -1,23 +1,23 @@
 from pydantic import BaseModel, Field, field_validator
+from uuid import UUID
 
 
 class RecipeEquipment(BaseModel):
-    name: str = Field(
+    equipment_uuid: UUID = Field(
         ...,
-        description="Equipment name, normalized (leading/trailing spaces removed).",
-        examples=["Four", "Casserole"],
+        description="Reference to the equipment catalog item.",
+        examples=["01951234-5678-7abc-def0-123456789abc"],
     )
     quantity: float | None = Field(
-        None,
+        1,
         description="Optional quantity of required equipment.",
         ge=0,
         examples=[1.0, 2.0],
     )
 
-    @field_validator("name", mode="before")
+    @field_validator("equipment_uuid", mode="before")
     @classmethod
-    def strip_name(cls, v: str) -> str:
-        stripped = v.strip()
-        if not stripped:
-            raise ValueError("Equipment name cannot be empty")
-        return stripped
+    def coerce_uuid(cls, v: object) -> UUID:
+        if isinstance(v, UUID):
+            return v
+        return UUID(str(v))

@@ -8,6 +8,9 @@ from adapters.input.schemas.ingredient_schema import (
 )
 from domain.models.ingredient import Ingredient
 
+GROUP_UUID = "01951234-5678-7abc-def0-000000000201"
+RAYON_UUID = "01951234-5678-7abc-def0-000000000202"
+
 
 # --- IngredientCreateSchema ---
 
@@ -39,15 +42,15 @@ def test_create_schema_season_months_invalid_score_raises():
 def test_create_schema_all_fields():
     s = IngredientCreateSchema(
         name="Tomate",
-        rayon="fruits et légumes",
-        group="légumes",
+        rayon_uuid=RAYON_UUID,
+        group_uuid=GROUP_UUID,
         green_score=80,
         unit="g",
         quantity=100.0,
         season_months={7: 3},
     )
-    assert s.rayon == "fruits et légumes"
-    assert s.group == "légumes"
+    assert str(s.rayon_uuid) == RAYON_UUID
+    assert str(s.group_uuid) == GROUP_UUID
     assert s.green_score == 80
     assert s.unit == "g"
     assert s.quantity == 100.0
@@ -58,7 +61,7 @@ def test_create_schema_all_fields():
 def test_patch_schema_all_none():
     s = IngredientPatchSchema()
     assert s.name is None
-    assert s.rayon is None
+    assert s.rayon_uuid is None
     assert s.season_months is None
 
 
@@ -87,8 +90,8 @@ def test_update_schema_empty_name_raises():
 # --- IngredientSchema (response) ---
 
 def test_response_schema_from_entity():
-    ingredient = Ingredient(name="Tomate", rayon="fruits et légumes", season_months={7: 3})
+    ingredient = Ingredient(name="Tomate", rayon_uuid=RAYON_UUID, season_months={7: 3})
     schema = IngredientSchema.model_validate(ingredient, from_attributes=True)
     assert schema.name == "Tomate"
-    assert schema.rayon == "fruits et légumes"
+    assert str(schema.rayon_uuid) == RAYON_UUID
     assert schema.season_months == {7: 3}

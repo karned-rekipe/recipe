@@ -9,6 +9,7 @@ from domain.models.meal_category import MealCategory
 from domain.models.recipe_equipment import RecipeEquipment
 from domain.models.recipe_ingredient import RecipeIngredient
 from domain.models.step import Step
+from uuid6 import UUID
 
 
 class MealType(str, Enum):
@@ -63,6 +64,12 @@ class Recipe(Entity):
     secondary_images: list[str] = Field(default_factory=list, description="Secondary image URIs.", examples=[["https://example.com/pizza2.jpg", "https://example.com/pizza3.jpg"]])
     main_image: str | None = Field(None, description="Main image URI.", examples=["https://example.com/pizza.jpg"])
     favorite: bool = Field(False, description="Whether the recipe was marked as a favorite.")
+    tag_uuids: list[UUID] = Field(default_factory=list, description="Referenced tag UUIDs.")
+    season_months: dict[int, int] = Field(
+        default_factory=dict,
+        description="Computed recipe seasonality map: month (1-12) -> score (1-3).",
+        examples=[{6: 1, 7: 3, 8: 3, 9: 2}],
+    )
     status: RecipeStatus = Field(RecipeStatus.active, description="Lifecycle status of the recipe.")
     quality_status: RecipeQualityStatus = Field(
         RecipeQualityStatus.structured,
@@ -96,3 +103,21 @@ class Recipe(Entity):
         if not stripped:
             raise ValueError("Recipe name cannot be empty")
         return stripped
+
+    @field_validator("tag_uuids", mode="before")
+    @classmethod
+    def coerce_tag_uuids(cls, value: object) -> list[UUID]:
+        if value is None:
+            return []
+        return [item if isinstance(item, UUID) else UUID(str(item)) for item in value]
+
+    @field_validator("season_months", mode="before")
+    @classmethod
+    def validate_season_months(cls, value: dict) -> dict:
+        for month, score in value.items():
+            month_int = int(month)
+            if not 1 <= month_int <= 12:
+                raise ValueError(f"Month key must be between 1 and 12, got {month_int}")
+            if not 1 <= int(score) <= 3:
+                raise ValueError(f"Season score must be between 1 and 3, got {score}")
+        return {int(month): int(score) for month, score in value.items()}

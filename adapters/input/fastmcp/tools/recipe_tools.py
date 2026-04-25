@@ -45,12 +45,11 @@ class RecipeMCP:
                         "name": "Houmous maison",
                         "servings": 4,
                         "ingredients": [{
-                            "name": "Pois chiches",
+                            "ingredient_uuid": "01951234-5678-7abc-def0-123456789abc",
                             "quantity": 400,
                             "unit": "g",
-                            "season_months": {},
                         }],
-                        "equipment": [{"name": "Mixeur"}],
+                        "equipment": [{"equipment_uuid": "01951234-5678-7abc-def0-123456789abd"}],
                         "steps": [{
                             "name": "Mixer",
                             "description": "Mixer tous les ingredients.",
@@ -72,7 +71,7 @@ class RecipeMCP:
             validated = RecipeCreateSchema.model_validate(payload)
             result = await service.create(recipe_create_payload_to_domain(validated))
             logger.info("✅ Recipe created via MCP", uuid=str(result.uuid), name=result.name)
-            return RecipeSchema.model_validate(result).model_dump(mode="json")
+            return RecipeSchema.model_validate(await service.hydrate_recipe(result)).model_dump(mode="json")
 
         @self._mcp.tool
         async def get_recipe(
@@ -92,7 +91,7 @@ class RecipeMCP:
                 logger.warning("⚠️ Recipe not found via MCP", uuid=uuid)
                 return None
             logger.info("✅ Recipe fetched via MCP", uuid=uuid, name=result.name)
-            return RecipeSchema.model_validate(result).model_dump(mode="json")
+            return RecipeSchema.model_validate(await service.hydrate_recipe(result)).model_dump(mode="json")
 
         @self._mcp.tool
         async def update_recipe(
@@ -120,7 +119,7 @@ class RecipeMCP:
             validated = RecipeUpdateSchema.model_validate(payload)
             result = await service.update(recipe_update_payload_to_domain(existing, validated))
             logger.info("✅ Recipe updated via MCP", uuid=uuid, name=result.name)
-            return RecipeSchema.model_validate(result).model_dump(mode="json")
+            return RecipeSchema.model_validate(await service.hydrate_recipe(result)).model_dump(mode="json")
 
         @self._mcp.tool
         async def patch_recipe(
@@ -148,7 +147,7 @@ class RecipeMCP:
             validated = RecipePatchSchema.model_validate(payload)
             result = await service.update(recipe_patch_payload_to_domain(existing, validated))
             logger.info("✅ Recipe patched via MCP", uuid=uuid, name=result.name)
-            return RecipeSchema.model_validate(result).model_dump(mode="json")
+            return RecipeSchema.model_validate(await service.hydrate_recipe(result)).model_dump(mode="json")
 
         @self._mcp.tool
         async def delete_recipe(
@@ -182,8 +181,9 @@ class RecipeMCP:
             """List all active recipe aggregates."""
             await inject_tenant_uri(ctx)
             items = await service.find_by_name(name) if name else await service.find_all()
+            hydrated = await service.hydrate_recipes(items)
             logger.info("✅ Recipes listed via MCP", count=len(items), filter=name)
-            return [RecipeSchema.model_validate(i).model_dump(mode="json") for i in items]
+            return [RecipeSchema.model_validate(i).model_dump(mode="json") for i in hydrated]
 
         @self._mcp.tool
         async def duplicate_recipe(
@@ -200,4 +200,4 @@ class RecipeMCP:
             await inject_tenant_uri(ctx)
             result = await service.duplicate(to_uuid6(StdUUID(uuid)))
             logger.info("✅ Recipe duplicated via MCP", source_uuid=uuid, new_uuid=str(result.uuid))
-            return RecipeSchema.model_validate(result).model_dump(mode="json")
+            return RecipeSchema.model_validate(await service.hydrate_recipe(result)).model_dump(mode="json")

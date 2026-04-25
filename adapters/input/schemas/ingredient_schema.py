@@ -2,6 +2,8 @@ from pydantic import BaseModel, Field, field_validator
 from uuid import UUID as StdUUID
 
 from arclith.adapters.input.schemas.base_schema import BaseSchema
+from adapters.input.schemas.ingredient_group_schema import IngredientGroupSchema
+from adapters.input.schemas.ingredient_rayon_schema import IngredientRayonSchema
 
 
 class IngredientCreateSchema(BaseModel):
@@ -11,8 +13,8 @@ class IngredientCreateSchema(BaseModel):
         examples=["Tomate", "Farine de blé"],
         min_length=1,
     )
-    rayon: str | None = Field(None, description="Shelf/aisle category.", examples=["fruits et légumes"])
-    group: str | None = Field(None, description="Food group.", examples=["légumes", "protéines"])
+    rayon_uuid: StdUUID | None = Field(None, description="Shelf/aisle UUID.")
+    group_uuid: StdUUID | None = Field(None, description="Food group UUID.")
     green_score: int | None = Field(None, description="Environmental score (OpenFoodFacts scale).", ge=0, examples=[80])
     unit: str | None = Field(None, description="Unit of measure.", examples=["g", "ml", "pièce"])
     quantity: float | None = Field(None, description="Default quantity.", ge=0, examples=[100.0])
@@ -43,8 +45,8 @@ class IngredientCreateSchema(BaseModel):
 
 class IngredientPatchSchema(BaseModel):
     name: str | None = Field(None, description="New ingredient name.", min_length=1, examples=["Farine complète"])
-    rayon: str | None = Field(None, description="Shelf/aisle category.", examples=["épicerie"])
-    group: str | None = Field(None, description="Food group.", examples=["féculents"])
+    rayon_uuid: StdUUID | None = Field(None, description="Shelf/aisle UUID.")
+    group_uuid: StdUUID | None = Field(None, description="Food group UUID.")
     green_score: int | None = Field(None, description="Environmental score.", ge=0, examples=[60])
     unit: str | None = Field(None, description="Unit of measure.", examples=["kg"])
     quantity: float | None = Field(None, description="Default quantity.", ge=0, examples=[500.0])
@@ -77,8 +79,10 @@ class IngredientCreatedSchema(BaseModel):
 
 class IngredientSchema(BaseSchema):
     name: str = Field(..., description="Ingredient name.", examples=["Tomate"])
-    rayon: str | None = Field(None, description="Shelf/aisle category.")
-    group: str | None = Field(None, description="Food group.")
+    rayon_uuid: StdUUID | None = Field(None, description="Shelf/aisle UUID.")
+    group_uuid: StdUUID | None = Field(None, description="Food group UUID.")
+    rayon: IngredientRayonSchema | None = Field(None, description="Hydrated shelf/aisle.")
+    group: IngredientGroupSchema | None = Field(None, description="Hydrated food group.")
     green_score: int | None = Field(None, description="Environmental score.")
     unit: str | None = Field(None, description="Unit of measure.")
     quantity: float | None = Field(None, description="Default quantity.")
