@@ -203,15 +203,15 @@ class RecipeService(BaseService[Recipe]):
     async def _ensure_references_exist(self, recipe: Recipe) -> None:
         missing_ingredients: list[str] = []
         if self._ingredient_repo is not None:
-            for line in recipe.ingredients:
-                if await self._ingredient_repo.read(UUID(str(line.ingredient_uuid))) is None:
-                    missing_ingredients.append(str(line.ingredient_uuid))
+            for ingredient_line in recipe.ingredients:
+                if await self._ingredient_repo.read(UUID(str(ingredient_line.ingredient_uuid))) is None:
+                    missing_ingredients.append(str(ingredient_line.ingredient_uuid))
 
         missing_equipment: list[str] = []
         if self._equipment_repo is not None:
-            for line in recipe.equipment:
-                if await self._equipment_repo.read(UUID(str(line.equipment_uuid))) is None:
-                    missing_equipment.append(str(line.equipment_uuid))
+            for equipment_line in recipe.equipment:
+                if await self._equipment_repo.read(UUID(str(equipment_line.equipment_uuid))) is None:
+                    missing_equipment.append(str(equipment_line.equipment_uuid))
 
         missing_tags: list[str] = []
         if self._tag_repo is not None:

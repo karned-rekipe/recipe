@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from datetime import datetime
 from enum import Enum
 
@@ -109,6 +110,8 @@ class Recipe(Entity):
     def coerce_tag_uuids(cls, value: object) -> list[UUID]:
         if value is None:
             return []
+        if not isinstance(value, Iterable) or isinstance(value, (str, bytes)):
+            raise ValueError("tag_uuids must be a list")
         return [item if isinstance(item, UUID) else UUID(str(item)) for item in value]
 
     @field_validator("season_months", mode="before")
