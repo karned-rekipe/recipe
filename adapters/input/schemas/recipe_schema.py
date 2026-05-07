@@ -8,8 +8,10 @@ from arclith.adapters.input.schemas.base_schema import BaseSchema
 from domain.models.country import Country
 from domain.models.meal_category import MealCategory
 from domain.models.recipe import MealType, Recipe, RecipeQualityStatus, RecipeStatus, Source
+from domain.models.recipe_component import RecipeComponent
 from domain.models.recipe_equipment import RecipeEquipment
 from domain.models.recipe_ingredient import RecipeIngredient
+from domain.models.recipe_line_origin import RecipeLineOrigin
 from domain.models.step import Step
 from uuid6 import UUID
 
@@ -38,6 +40,9 @@ class RecipeIngredientWriteSchema(BaseModel):
         min_length=1,
         examples=["g", "ml", "piece"],
     )
+    component_uuid: StdUUID | None = Field(None, description="Projected component UUID, ignored for manual writes.")
+    source_recipe_uuid: StdUUID | None = Field(None, description="Projected source recipe UUID, ignored for manual writes.")
+    line_origin: RecipeLineOrigin = Field(RecipeLineOrigin.manual, description="Manual or projected line origin.")
 
     @field_validator("unit", mode="before")
     @classmethod
@@ -61,9 +66,42 @@ class RecipeIngredientSchema(BaseModel):
     season_months: dict[int, int] = Field(default_factory=dict, description="Seasonality map.")
     rayon_uuid: StdUUID | None = Field(None, description="Shelf/aisle UUID.")
     group_uuid: StdUUID | None = Field(None, description="Food group UUID.")
+    main_supplier_uuid: StdUUID | None = Field(None, description="Preferred supplier UUID.")
+    secondary_supplier_uuids: list[StdUUID] = Field(default_factory=list, description="Other possible supplier UUIDs.")
     rayon: IngredientRayonSchema | None = Field(None, description="Hydrated shelf/aisle.")
     group: IngredientGroupSchema | None = Field(None, description="Hydrated food group.")
     green_score: int | None = Field(None, description="Environmental score.")
+    component_uuid: StdUUID | None = Field(None, description="Projected component UUID.")
+    source_recipe_uuid: StdUUID | None = Field(None, description="Projected source recipe UUID.")
+    line_origin: RecipeLineOrigin = Field(RecipeLineOrigin.manual, description="Manual or projected line origin.")
+
+
+class RecipeComponentWriteSchema(BaseModel):
+    uuid: StdUUID | None = Field(None, description="Stable embedded component UUID.")
+    recipe_uuid: StdUUID = Field(..., description="Referenced child recipe UUID.")
+    label: str = Field(..., min_length=1, description="Display label for the child recipe.")
+    rank: int = Field(..., ge=1, description="Display order in the parent recipe.")
+    servings_multiplier: float = Field(1.0, gt=0, description="Quantity multiplier applied to projected child lines.")
+
+    @field_validator("label", mode="before")
+    @classmethod
+    def label_not_empty(cls, v: str) -> str:
+        if isinstance(v, str) and not v.strip():
+            raise ValueError("Label cannot be empty")
+        return v
+
+
+class RecipeComponentSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    uuid: StdUUID = Field(..., description="Stable embedded component UUID.")
+    recipe_uuid: StdUUID = Field(..., description="Referenced child recipe UUID.")
+    label: str = Field(..., description="Display label for the child recipe.")
+    rank: int = Field(..., ge=1, description="Display order in the parent recipe.")
+    servings_multiplier: float = Field(..., gt=0, description="Quantity multiplier applied to projected child lines.")
+    recipe_name: str | None = Field(None, description="Hydrated child recipe name.")
+    ingredients: list[RecipeIngredientSchema] = Field(default_factory=list, description="Projected child ingredients.")
+    steps: list[StepSchema] = Field(default_factory=list, description="Projected child steps.")
 
 
 class RecipeEquipmentWriteSchema(BaseModel):
@@ -106,6 +144,9 @@ class RecipeStepWriteSchema(BaseModel):
     main_image: str | None = Field(None, description="URI of the main image for the step.")
     secondary_images: list[str] = Field(default_factory=list, description="URIs of secondary step images.")
     rank: int = Field(..., description="Order of the step in the recipe.", ge=1, examples=[1, 2, 3])
+    component_uuid: StdUUID | None = Field(None, description="Projected component UUID, ignored for manual writes.")
+    source_recipe_uuid: StdUUID | None = Field(None, description="Projected source recipe UUID, ignored for manual writes.")
+    line_origin: RecipeLineOrigin = Field(RecipeLineOrigin.manual, description="Manual or projected line origin.")
 
     @field_validator("name", mode="before")
     @classmethod
@@ -159,6 +200,10 @@ class RecipeCreateSchema(BaseModel):
         description="Liste des sources de la recette.",
         examples=[[{"name": "Marmiton", "description": "Recette originale", "uri": "https://www.marmiton.org/recettes/recette_pizza.html"}]],
     )
+    components: list[RecipeComponentWriteSchema] = Field(
+        default_factory=list,
+        description="Sous-recettes liees qui composent cette recette.",
+    )
     ingredients: list[RecipeIngredientWriteSchema] = Field(
         default_factory=list,
         description="Liste des references ingredients de la recette.",
@@ -208,6 +253,7 @@ class RecipePatchSchema(BaseModel):
         None,
         examples=[[{"name": "Marmiton", "description": "Recette originale", "uri": "https://www.marmiton.org/recettes/recette_pizza.html"}]],
     )
+    components: list[RecipeComponentWriteSchema] | None = None
     ingredients: list[RecipeIngredientWriteSchema] | None = None
     equipment: list[RecipeEquipmentWriteSchema] | None = None
     steps: list[RecipeStepWriteSchema] | None = None
@@ -234,6 +280,7 @@ class RecipePatchSchema(BaseModel):
             "status": self.status,
             "quality_status": self.quality_status,
             "migration_metadata": self.migration_metadata,
+            "components": self.components,
         }
         for field_name, value in non_nullable_when_present.items():
             if field_name in self.model_fields_set and value is None:
@@ -274,6 +321,10 @@ class RecipeSchema(BaseSchema):
         default_factory=list,
         description="Liste des sources de la recette.",
         examples=[[{"name": "Marmiton", "description": "Recette originale", "uri": "https://www.marmiton.org/recettes/recette_pizza.html"}]],
+    )
+    components: list[RecipeComponentSchema] = Field(
+        default_factory=list,
+        description="Sous-recettes hydratees.",
     )
     ingredients: list[RecipeIngredientSchema] = Field(
         default_factory=list,
@@ -332,6 +383,7 @@ def recipe_create_payload_to_domain(payload: RecipeCreateSchema) -> Recipe:
         updated_at_legacy=payload.updated_at_legacy,
         migration_metadata=dict(payload.migration_metadata),
         sources=[Source(**source.model_dump()) for source in payload.sources],
+        components=[_to_recipe_component(component) for component in payload.components],
         ingredients=ingredients,
         equipment=[_to_recipe_equipment(item) for item in payload.equipment],
         steps=[_to_step(step) for step in payload.steps],
@@ -372,6 +424,7 @@ def recipe_update_payload_to_domain(existing: Recipe, payload: RecipeUpdateSchem
         if "migration_metadata" in payload.model_fields_set
         else dict(existing.migration_metadata),
         sources=[Source(**source.model_dump()) for source in payload.sources],
+        components=[_to_recipe_component(component) for component in payload.components],
         ingredients=ingredients,
         equipment=[_to_recipe_equipment(item) for item in payload.equipment],
         steps=[_to_step(step) for step in payload.steps],
@@ -398,6 +451,12 @@ def recipe_patch_payload_to_domain(existing: Recipe, payload: RecipePatchSchema)
         if payload.sources is None:
             raise ValueError("sources cannot be null when provided")
         sources = [Source(**source.model_dump()) for source in payload.sources]
+
+    components = list(existing.components)
+    if "components" in fields_set:
+        if payload.components is None:
+            raise ValueError("components cannot be null when provided")
+        components = [_to_recipe_component(component) for component in payload.components]
 
     ingredients = list(existing.ingredients)
     if "ingredients" in fields_set:
@@ -449,6 +508,7 @@ def recipe_patch_payload_to_domain(existing: Recipe, payload: RecipePatchSchema)
         updated_at_legacy=payload.updated_at_legacy if "updated_at_legacy" in fields_set else existing.updated_at_legacy,
         migration_metadata=migration_metadata,
         sources=sources,
+        components=components,
         ingredients=ingredients,
         equipment=equipment,
         steps=steps,
@@ -460,7 +520,15 @@ def _to_recipe_ingredient(payload: RecipeIngredientWriteSchema) -> RecipeIngredi
         ingredient_uuid=UUID(str(payload.ingredient_uuid)),
         quantity=payload.quantity,
         unit=payload.unit,
+        component_uuid=UUID(str(payload.component_uuid)) if payload.component_uuid is not None else None,
+        source_recipe_uuid=UUID(str(payload.source_recipe_uuid)) if payload.source_recipe_uuid is not None else None,
+        line_origin=payload.line_origin,
     )
+
+
+def _to_recipe_component(payload: RecipeComponentWriteSchema) -> RecipeComponent:
+    data = payload.model_dump(exclude_none=True)
+    return RecipeComponent(**data)
 
 
 def _to_recipe_equipment(payload: RecipeEquipmentWriteSchema) -> RecipeEquipment:

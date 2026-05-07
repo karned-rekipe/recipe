@@ -15,6 +15,7 @@ class DuckDBRecipeRepository(DuckDBRepository[Recipe], RecipeRepository):
         row = entity.model_dump(mode="json", exclude_computed_fields=True)
         row["uuid"] = str(row["uuid"])
         row["sources"] = json.dumps(row["sources"])
+        row["components"] = json.dumps(row["components"])
         row["ingredients"] = json.dumps(row["ingredients"])
         row["equipment"] = json.dumps(row["equipment"])
         row["steps"] = json.dumps(row["steps"])
@@ -25,7 +26,16 @@ class DuckDBRecipeRepository(DuckDBRepository[Recipe], RecipeRepository):
 
     def _row_to_entity(self, row: dict[str, Any]) -> Recipe:
         cleaned = dict(row)
-        for field_name in ("sources", "ingredients", "equipment", "steps", "tag_uuids", "season_months", "secondary_images"):
+        for field_name in (
+            "sources",
+            "components",
+            "ingredients",
+            "equipment",
+            "steps",
+            "tag_uuids",
+            "season_months",
+            "secondary_images",
+        ):
             value = cleaned.get(field_name)
             if isinstance(value, str) and value:
                 cleaned[field_name] = json.loads(value)
@@ -42,6 +52,20 @@ class DuckDBRecipeRepository(DuckDBRepository[Recipe], RecipeRepository):
     # noinspection SqlNoDataSourceInspection
     async def find_page_by_name(self, name: str, offset: int = 0, limit: int | None = None) -> tuple[list[Recipe], int]:
         return await self.find_page_filtered(name=name, offset=offset, limit=limit)
+
+    # noinspection SqlNoDataSourceInspection
+    async def find_by_component_recipe_uuid(self, recipe_uuid: UUID) -> list[Recipe]:
+        rows = self._fetch(
+            f"SELECT * FROM {self._table} WHERE deleted_at IS NULL ORDER BY rowid",  # nosec B608
+            [],
+        )
+        recipe_uuid_text = str(recipe_uuid)
+        recipes = [self._row_to_entity(row) for row in rows]
+        return [
+            recipe
+            for recipe in recipes
+            if any(str(component.recipe_uuid) == recipe_uuid_text for component in recipe.components)
+        ]
 
     async def find_page_by_ingredient_uuid(
         self,

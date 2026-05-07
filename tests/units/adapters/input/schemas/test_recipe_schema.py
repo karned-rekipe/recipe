@@ -51,6 +51,26 @@ def test_create_schema_valid():
     assert len(s.steps) == 1
 
 
+def test_create_schema_accepts_components():
+    child_uuid = "01951234-5678-7abc-def0-000000000201"
+    s = RecipeCreateSchema(
+        **_payload(
+            components=[{
+                "recipe_uuid": child_uuid,
+                "label": "Crème anglaise",
+                "rank": 1,
+                "servings_multiplier": 2,
+            }]
+        )
+    )
+    recipe = recipe_create_payload_to_domain(s)
+
+    assert len(recipe.components) == 1
+    assert str(recipe.components[0].recipe_uuid) == child_uuid
+    assert recipe.components[0].label == "Crème anglaise"
+    assert recipe.components[0].servings_multiplier == 2
+
+
 def test_create_payload_to_domain_maps_migration_metadata():
     payload = RecipeCreateSchema(
         **_payload(

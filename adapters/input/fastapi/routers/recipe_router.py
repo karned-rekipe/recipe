@@ -16,7 +16,12 @@ from adapters.input.schemas.recipe_schema import (
     recipe_update_payload_to_domain,
 )
 from domain.models.recipe import RecipeStatus
-from application.services.recipe_service import RecipeReferenceError, RecipeService
+from application.services.recipe_service import (
+    RecipeComponentCycleError,
+    RecipeComponentInUseError,
+    RecipeReferenceError,
+    RecipeService,
+)
 from arclith.adapters.input.fastapi.dependencies import get_duration_ms
 from arclith.adapters.input.schemas.response_wrapper import (
     ApiResponse,
@@ -150,7 +155,7 @@ class RecipeRouter:
         """
         try:
             result = await self._service.create(recipe_create_payload_to_domain(payload))
-        except RecipeReferenceError as exc:
+        except (RecipeComponentCycleError, RecipeReferenceError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
         # RFC 7231: Location header on 201 Created
@@ -272,7 +277,7 @@ class RecipeRouter:
 
         try:
             updated = await self._service.update(recipe_update_payload_to_domain(existing, payload))
-        except RecipeReferenceError as exc:
+        except (RecipeComponentCycleError, RecipeReferenceError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
         # RFC 7231: Content-Location header
@@ -322,7 +327,7 @@ class RecipeRouter:
 
         try:
             updated = await self._service.update(recipe_patch_payload_to_domain(existing, payload))
-        except RecipeReferenceError as exc:
+        except (RecipeComponentCycleError, RecipeReferenceError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
         # RFC 7231: Content-Location header
@@ -342,7 +347,10 @@ class RecipeRouter:
         It is retained until the purge retention period expires.
         Use `DELETE /admin/purge` to permanently remove all expired entities.
         """
-        await self._service.delete(self._to_uuid6(uuid))
+        try:
+            await self._service.delete(self._to_uuid6(uuid))
+        except RecipeComponentInUseError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     async def list_recipes(
         self,

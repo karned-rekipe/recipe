@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field, field_validator
 from uuid import UUID
 
+from domain.models.recipe_line_origin import RecipeLineOrigin
+
 
 class RecipeIngredient(BaseModel):
     ingredient_uuid: UUID = Field(
@@ -19,10 +21,24 @@ class RecipeIngredient(BaseModel):
         description="Unit of measure for the recipe quantity.",
         examples=["g", "ml", "piece"],
     )
+    component_uuid: UUID | None = Field(
+        None,
+        description="Parent embedded component UUID when this line is projected from a sub-recipe.",
+    )
+    source_recipe_uuid: UUID | None = Field(
+        None,
+        description="Child recipe UUID when this line is projected from a sub-recipe.",
+    )
+    line_origin: RecipeLineOrigin = Field(
+        RecipeLineOrigin.manual,
+        description="Whether the line is manually owned by the recipe or projected from a component.",
+    )
 
-    @field_validator("ingredient_uuid", mode="before")
+    @field_validator("ingredient_uuid", "component_uuid", "source_recipe_uuid", mode="before")
     @classmethod
-    def coerce_uuid(cls, v: object) -> UUID:
+    def coerce_uuid(cls, v: object) -> UUID | None:
+        if v is None:
+            return None
         if isinstance(v, UUID):
             return v
         return UUID(str(v))

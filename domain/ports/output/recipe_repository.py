@@ -46,6 +46,11 @@ class RecipeRepository(Repository[Recipe]):
         pass
 
     @abstractmethod
+    async def find_by_component_recipe_uuid(self, recipe_uuid: UUID) -> list[Recipe]:
+        """Return active recipes that reference the given recipe as a component."""
+        pass
+
+    @abstractmethod
     async def find_page_filtered(
         self,
         name: str | None = None,

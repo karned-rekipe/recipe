@@ -31,6 +31,7 @@ MongoDocument = dict[str, Any]
 
 LEGACY_SOURCE_NAME = "cuisine.karned.bzh"
 LEGACY_NAMESPACE = uuid5(NAMESPACE_URL, f"rekipe:{LEGACY_SOURCE_NAME}")
+MEAL_PLAN_ENTRY_COLLECTION = "meal_plan_entry"
 TARGET_TABLES = {
     "mkg_liste_choix",
     "mkg_recipe",
@@ -299,7 +300,7 @@ def build_artifacts(tables: dict[str, list[SqlRow]], args: argparse.Namespace) -
         "ingredient": len(ingredient_docs),
         "equipment": len(equipment_docs),
         "recipe": len(recipe_docs),
-        "legacy_meal_plan_entry": len(planner_docs),
+        MEAL_PLAN_ENTRY_COLLECTION: len(planner_docs),
     }
     return ImportArtifacts(ingredient_group_docs, ingredient_rayon_docs, tag_docs, ingredient_docs, equipment_docs, recipe_docs, planner_docs, report)
 
@@ -716,6 +717,7 @@ def build_planner_docs(
 
         doc = {
             "_id": legacy_uuid("mkg_recipe__planner", legacy_id),
+            "document_type": "legacy_entry",
             "legacy_id": legacy_id,
             "date": clean_text(row.get("date")),
             "headcount": positive_int(row.get("nb_personne")),
@@ -755,7 +757,7 @@ def import_into_mongo(artifacts: ImportArtifacts, args: argparse.Namespace) -> N
         "ingredient": artifacts.ingredient_docs,
         "equipment": artifacts.equipment_docs,
         "recipe": artifacts.recipe_docs,
-        "legacy_meal_plan_entry": artifacts.planner_docs,
+        MEAL_PLAN_ENTRY_COLLECTION: artifacts.planner_docs,
     }
 
     for collection_name, docs in collections.items():
@@ -778,8 +780,13 @@ def import_into_mongo(artifacts: ImportArtifacts, args: argparse.Namespace) -> N
     db["recipe"].create_index("equipment.equipment_uuid", name="equipment_equipment_uuid")
     db["recipe"].create_index("tag_uuids", name="tag_uuids")
     db["recipe"].create_index("season_months", name="season_months")
-    db["legacy_meal_plan_entry"].create_index("legacy_id", unique=True, sparse=True, name="legacy_id_unique")
-    db["legacy_meal_plan_entry"].create_index("date", name="date")
+    db[MEAL_PLAN_ENTRY_COLLECTION].create_index("legacy_id", unique=True, sparse=True, name="legacy_id_unique")
+    db[MEAL_PLAN_ENTRY_COLLECTION].create_index("date", name="date")
+    db[MEAL_PLAN_ENTRY_COLLECTION].create_index("document_type", name="document_type")
+    db[MEAL_PLAN_ENTRY_COLLECTION].create_index(
+        [("document_type", 1), ("date", 1)],
+        name="document_type_date",
+    )
 
 
 def bulk_replace(collection: Any, docs: list[MongoDocument]) -> dict[str, int]:

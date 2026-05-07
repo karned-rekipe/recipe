@@ -7,9 +7,12 @@ from domain.models.ingredient import Ingredient
 from domain.models.ingredient_group import IngredientGroup
 from domain.models.ingredient_rayon import IngredientRayon
 from domain.models.recipe import Recipe, RecipeStatus
+from domain.models.recipe_component import RecipeComponent
 from domain.models.recipe_equipment import RecipeEquipment
 from domain.models.recipe_ingredient import RecipeIngredient
+from domain.models.recipe_line_origin import RecipeLineOrigin
 from domain.models.tag import Tag
+from domain.models.step import Step
 from domain.ports.output.equipment_repository import EquipmentRepository
 from domain.ports.output.ingredient_group_repository import IngredientGroupRepository
 from domain.ports.output.ingredient_repository import IngredientRepository
@@ -25,6 +28,14 @@ class RecipeReferenceError(ValueError):
 
 class RecipeMergeConflict(ValueError):
     """Raised when a catalog merge would create an ambiguous recipe reference."""
+
+
+class RecipeComponentCycleError(ValueError):
+    """Raised when recipe components would create a recursive recipe graph."""
+
+
+class RecipeComponentInUseError(ValueError):
+    """Raised when deleting a recipe still used as a component."""
 
 
 class RecipeService(BaseService[Recipe]):
@@ -53,14 +64,21 @@ class RecipeService(BaseService[Recipe]):
         return self._recipe_repo
 
     async def create(self, entity: Recipe) -> Recipe:
-        await self._ensure_references_exist(entity)
-        enriched = entity.model_copy(update={"season_months": await self._calculate_recipe_season(entity)})
+        enriched = await self._prepare_for_save(entity)
         return await super().create(enriched)
 
     async def update(self, entity: Recipe) -> Recipe:
-        await self._ensure_references_exist(entity)
-        enriched = entity.model_copy(update={"season_months": await self._calculate_recipe_season(entity)})
-        return await super().update(enriched)
+        enriched = await self._prepare_for_save(entity)
+        updated = await super().update(enriched)
+        await self._propagate_component_change(updated.uuid, visited={str(updated.uuid)})
+        return updated
+
+    async def delete(self, uuid: UUID, deleted_by: str | None = None) -> None:
+        parents = await self._recipe_repo.find_by_component_recipe_uuid(uuid)
+        if parents:
+            parent_names = ", ".join(parent.name for parent in parents[:5])
+            raise RecipeComponentInUseError(f"Recipe is used as a component by: {parent_names}")
+        await super().delete(uuid, deleted_by)
 
     async def find_by_name(self, name: str) -> list[Recipe]:
         return await self._find_by_name_uc.execute(name)
@@ -106,6 +124,7 @@ class RecipeService(BaseService[Recipe]):
             await self._hydrate_ingredient_line(line.model_dump(mode="json"), await self._read_ingredient(line.ingredient_uuid))
             for line in recipe.ingredients
         ]
+        data["components"] = await self._hydrate_components(recipe.components)
         data["equipment"] = [
             self._hydrate_equipment_line(line.model_dump(mode="json"), await self._read_equipment(line.equipment_uuid))
             for line in recipe.equipment
@@ -219,6 +238,12 @@ class RecipeService(BaseService[Recipe]):
                 if await self._tag_repo.read(UUID(str(tag_uuid))) is None:
                     missing_tags.append(str(tag_uuid))
 
+        missing_components: list[str] = []
+        for component in recipe.components:
+            child = await self.read(UUID(str(component.recipe_uuid)))
+            if child is None:
+                missing_components.append(str(component.recipe_uuid))
+
         errors: list[str] = []
         if missing_ingredients:
             errors.append(f"Unknown ingredient UUID(s): {', '.join(missing_ingredients)}")
@@ -226,8 +251,12 @@ class RecipeService(BaseService[Recipe]):
             errors.append(f"Unknown equipment UUID(s): {', '.join(missing_equipment)}")
         if missing_tags:
             errors.append(f"Unknown tag UUID(s): {', '.join(missing_tags)}")
+        if missing_components:
+            errors.append(f"Unknown component recipe UUID(s): {', '.join(missing_components)}")
         if errors:
             raise RecipeReferenceError("; ".join(errors))
+
+        await self._ensure_component_graph_is_acyclic(recipe)
 
     async def _read_ingredient(self, ingredient_uuid: object) -> Ingredient | None:
         if self._ingredient_repo is None:
@@ -266,9 +295,16 @@ class RecipeService(BaseService[Recipe]):
             "season_months": ingredient.season_months if ingredient is not None else {},
             "rayon_uuid": str(ingredient.rayon_uuid) if ingredient is not None and ingredient.rayon_uuid is not None else None,
             "group_uuid": str(ingredient.group_uuid) if ingredient is not None and ingredient.group_uuid is not None else None,
+            "main_supplier_uuid": str(ingredient.main_supplier_uuid)
+            if ingredient is not None and ingredient.main_supplier_uuid is not None
+            else None,
+            "secondary_supplier_uuids": [str(uuid) for uuid in ingredient.secondary_supplier_uuids] if ingredient is not None else [],
             "rayon": self._catalog_payload(rayon),
             "group": self._catalog_payload(group),
             "green_score": ingredient.green_score if ingredient is not None else None,
+            "component_uuid": line.get("component_uuid"),
+            "source_recipe_uuid": line.get("source_recipe_uuid"),
+            "line_origin": line.get("line_origin") or RecipeLineOrigin.manual.value,
         }
 
     @staticmethod
@@ -303,6 +339,175 @@ class RecipeService(BaseService[Recipe]):
                 score = round(sum(scores) / len(scores))
                 aggregated[month] = max(1, min(3, score))
         return aggregated
+
+    async def _prepare_for_save(self, recipe: Recipe) -> Recipe:
+        await self._ensure_references_exist(recipe)
+        projected = await self._with_component_projection(recipe)
+        season_months = await self._calculate_recipe_season(projected)
+        return projected.model_copy(
+            update={
+                "season_months": season_months,
+                "status": self._status_for_lines(projected),
+            }
+        )
+
+    async def _with_component_projection(self, recipe: Recipe) -> Recipe:
+        manual_ingredients = [
+            self._as_manual_ingredient(line)
+            for line in recipe.ingredients
+            if line.line_origin != RecipeLineOrigin.component_projection
+        ]
+        manual_steps = [
+            step
+            for step in recipe.steps
+            if step.line_origin != RecipeLineOrigin.component_projection
+        ]
+
+        projected_ingredients: list[RecipeIngredient] = []
+        projected_steps: list[Step] = []
+        components = sorted(recipe.components, key=lambda component: component.rank)
+        for component in components:
+            child = await self.read(UUID(str(component.recipe_uuid)))
+            if child is None:
+                continue
+            projected_ingredients.extend(self._project_ingredients_for_component(component, child))
+            projected_steps.extend(self._project_steps_for_component(component, child))
+
+        ranked_steps = self._rank_steps([*manual_steps, *projected_steps])
+        return recipe.model_copy(
+            update={
+                "components": components,
+                "ingredients": [*manual_ingredients, *projected_ingredients],
+                "steps": ranked_steps,
+            }
+        )
+
+    def _as_manual_ingredient(self, line: RecipeIngredient) -> RecipeIngredient:
+        if line.line_origin == RecipeLineOrigin.manual and line.component_uuid is None and line.source_recipe_uuid is None:
+            return line
+        return line.model_copy(
+            update={
+                "component_uuid": None,
+                "source_recipe_uuid": None,
+                "line_origin": RecipeLineOrigin.manual,
+            }
+        )
+
+    @staticmethod
+    def _project_ingredients_for_component(component: RecipeComponent, child: Recipe) -> list[RecipeIngredient]:
+        return [
+            line.model_copy(
+                update={
+                    "quantity": line.quantity * component.servings_multiplier,
+                    "component_uuid": component.uuid,
+                    "source_recipe_uuid": component.recipe_uuid,
+                    "line_origin": RecipeLineOrigin.component_projection,
+                }
+            )
+            for line in child.ingredients
+        ]
+
+    @staticmethod
+    def _project_steps_for_component(component: RecipeComponent, child: Recipe) -> list[Step]:
+        return [
+            Step(
+                name=step.name,
+                description=step.description,
+                cooking_time=step.cooking_time,
+                rest_time=step.rest_time,
+                preparation_time=step.preparation_time,
+                secondary_images=list(step.secondary_images),
+                main_image=step.main_image,
+                rank=step.rank,
+                component_uuid=component.uuid,
+                source_recipe_uuid=component.recipe_uuid,
+                line_origin=RecipeLineOrigin.component_projection,
+            )
+            for step in child.steps
+        ]
+
+    @staticmethod
+    def _rank_steps(steps: list[Step]) -> list[Step]:
+        return [
+            step.model_copy(update={"rank": rank})
+            for rank, step in enumerate(sorted(steps, key=lambda item: item.rank), 1)
+        ]
+
+    @staticmethod
+    def _status_for_lines(recipe: Recipe) -> RecipeStatus:
+        if recipe.status == RecipeStatus.archived:
+            return RecipeStatus.archived
+        return RecipeStatus.active if recipe.ingredients else RecipeStatus.draft
+
+    async def _ensure_component_graph_is_acyclic(self, recipe: Recipe) -> None:
+        for component in recipe.components:
+            if str(component.recipe_uuid) == str(recipe.uuid):
+                raise RecipeComponentCycleError("A recipe cannot include itself as a component")
+            if await self._component_path_reaches(
+                start_uuid=UUID(str(component.recipe_uuid)),
+                target_uuid=UUID(str(recipe.uuid)),
+                seen=set(),
+            ):
+                raise RecipeComponentCycleError("Recipe components cannot create a cycle")
+
+    async def _component_path_reaches(self, *, start_uuid: UUID, target_uuid: UUID, seen: set[str]) -> bool:
+        start_key = str(start_uuid)
+        if start_key == str(target_uuid):
+            return True
+        if start_key in seen:
+            return False
+        seen.add(start_key)
+
+        recipe = await self.read(start_uuid)
+        if recipe is None:
+            return False
+        for component in recipe.components:
+            if await self._component_path_reaches(
+                start_uuid=UUID(str(component.recipe_uuid)),
+                target_uuid=target_uuid,
+                seen=seen,
+            ):
+                return True
+        return False
+
+    async def _propagate_component_change(self, recipe_uuid: UUID, *, visited: set[str]) -> None:
+        parents = await self._recipe_repo.find_by_component_recipe_uuid(recipe_uuid)
+        for parent in parents:
+            parent_key = str(parent.uuid)
+            if parent_key in visited:
+                continue
+            visited.add(parent_key)
+            projected_parent = await self._prepare_for_save(parent)
+            updated_parent = await super().update(projected_parent)
+            await self._propagate_component_change(updated_parent.uuid, visited=visited)
+
+    async def _hydrate_components(self, components: list[RecipeComponent]) -> list[dict[str, Any]]:
+        hydrated: list[dict[str, Any]] = []
+        for component in sorted(components, key=lambda item: item.rank):
+            child = await self.read(UUID(str(component.recipe_uuid)))
+            component_data = component.model_dump(mode="json")
+            if child is None:
+                component_data["recipe_name"] = None
+                component_data["ingredients"] = []
+                component_data["steps"] = []
+                hydrated.append(component_data)
+                continue
+
+            projected_ingredients = self._project_ingredients_for_component(component, child)
+            component_data["recipe_name"] = child.name
+            component_data["ingredients"] = [
+                await self._hydrate_ingredient_line(
+                    line.model_dump(mode="json"),
+                    await self._read_ingredient(line.ingredient_uuid),
+                )
+                for line in projected_ingredients
+            ]
+            component_data["steps"] = [
+                self._step_to_schema_payload(step)
+                for step in self._rank_steps(self._project_steps_for_component(component, child))
+            ]
+            hydrated.append(component_data)
+        return hydrated
 
     @staticmethod
     def _catalog_payload(item: IngredientGroup | IngredientRayon | None) -> dict[str, Any] | None:

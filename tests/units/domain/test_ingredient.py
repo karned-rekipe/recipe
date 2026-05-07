@@ -4,6 +4,8 @@ from domain.models.ingredient import Ingredient
 
 GROUP_UUID = "01951234-5678-7abc-def0-000000000201"
 RAYON_UUID = "01951234-5678-7abc-def0-000000000202"
+SUPPLIER_UUID = "01951234-5678-7abc-def0-000000000203"
+SECONDARY_SUPPLIER_UUID = "01951234-5678-7abc-def0-000000000204"
 
 
 def make_ingredient(**kwargs) -> Ingredient:
@@ -71,6 +73,8 @@ def test_optional_fields_default_none():
     ingredient = make_ingredient()
     assert ingredient.rayon_uuid is None
     assert ingredient.group_uuid is None
+    assert ingredient.main_supplier_uuid is None
+    assert ingredient.secondary_supplier_uuids == []
     assert ingredient.green_score is None
     assert ingredient.unit is None
     assert ingredient.quantity is None
@@ -80,6 +84,8 @@ def test_all_fields():
     ingredient = make_ingredient(
         rayon_uuid=RAYON_UUID,
         group_uuid=GROUP_UUID,
+        main_supplier_uuid=SUPPLIER_UUID,
+        secondary_supplier_uuids=[SECONDARY_SUPPLIER_UUID],
         green_score=80,
         unit="g",
         quantity=100.0,
@@ -87,6 +93,8 @@ def test_all_fields():
     )
     assert str(ingredient.rayon_uuid) == RAYON_UUID
     assert str(ingredient.group_uuid) == GROUP_UUID
+    assert str(ingredient.main_supplier_uuid) == SUPPLIER_UUID
+    assert [str(uuid) for uuid in ingredient.secondary_supplier_uuids] == [SECONDARY_SUPPLIER_UUID]
     assert ingredient.green_score == 80
     assert ingredient.unit == "g"
     assert ingredient.quantity == 100.0

@@ -35,6 +35,14 @@ class InMemoryRecipeRepository(InMemoryRepository[Recipe], RecipeRepository):
     ) -> tuple[list[Recipe], int]:
         return await self.find_page_filtered(tag_uuid=tag_uuid, offset=offset, limit=limit)
 
+    async def find_by_component_recipe_uuid(self, recipe_uuid: UUID) -> list[Recipe]:
+        return [
+            recipe
+            for recipe in self._store.values()
+            if not recipe.is_deleted
+            and any(str(component.recipe_uuid) == str(recipe_uuid) for component in recipe.components)
+        ]
+
     async def find_page_filtered(
         self,
         name: str | None = None,
@@ -110,6 +118,8 @@ class InMemoryRecipeRepository(InMemoryRepository[Recipe], RecipeRepository):
             return False
         expected_status = RecipeStatus.active if meal_planner_eligible else status
         if expected_status is not None and recipe.status != expected_status:
+            return False
+        if meal_planner_eligible and not recipe.ingredients:
             return False
         if name and name.lower() not in recipe.name.lower():
             return False

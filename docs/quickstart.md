@@ -46,7 +46,7 @@ Le script d'import lit l'export SQL historique et importe dans MongoDB :
 
 - le catalogue `ingredient` ;
 - les agrégats `recipe` avec ingrédients, équipements, étapes et métadonnées legacy ;
-- l'historique de planification dans la collection de transition `legacy_meal_plan_entry`.
+- l'historique de planification dans la collection canonique `meal_plan_entry`, avec `document_type: legacy_entry`.
 
 Dry-run :
 
@@ -78,3 +78,8 @@ uv run python scripts/import_legacy_sql.py \
 ```
 
 Le rapport est écrit dans `.run/legacy_sql_import_report.json`.
+
+La collection `recipe.meal_plan_entry` est partagée avec `meal-planner` :
+
+- `document_type: legacy_entry` pour les lignes importées depuis `mkg_recipe__planner` ;
+- `document_type: meal_plan` pour les plans courants persistés par `meal-planner`.

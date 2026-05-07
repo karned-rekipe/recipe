@@ -18,6 +18,8 @@ class MongoDBRecipeRepository(MongoDBRepository[Recipe], RecipeRepository):
     def _to_doc(self, entity: Recipe) -> dict[str, Any]:
         doc = entity.model_dump(mode="json", exclude_computed_fields=True)
         doc["_id"] = doc.pop("uuid")
+        if doc.get("legacy_id") is None:
+            doc.pop("legacy_id", None)
         return doc
 
     async def find_by_name(self, name: str) -> list[Recipe]:
@@ -57,6 +59,15 @@ class MongoDBRecipeRepository(MongoDBRepository[Recipe], RecipeRepository):
     ) -> tuple[list[Recipe], int]:
         return await self.find_page_filtered(tag_uuid=tag_uuid, offset=offset, limit=limit)
 
+    async def find_by_component_recipe_uuid(self, recipe_uuid: UUID) -> list[Recipe]:
+        async with self._collection() as col:
+            return [
+                self._from_doc(doc)
+                async for doc in col.find(
+                    {"components.recipe_uuid": str(recipe_uuid), "deleted_at": None}
+                )
+            ]
+
     async def find_page_filtered(
         self,
         name: str | None = None,
@@ -77,6 +88,8 @@ class MongoDBRecipeRepository(MongoDBRepository[Recipe], RecipeRepository):
         expected_status = RecipeStatus.active if meal_planner_eligible else status
         if expected_status is not None:
             match["status"] = expected_status.value
+        if meal_planner_eligible:
+            match["ingredients.0"] = {"$exists": True}
         if name:
             match["name"] = {"$regex": re.escape(name), "$options": "i"}
         if ingredient_uuid is not None:

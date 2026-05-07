@@ -14,6 +14,11 @@ class MongoDBIngredientRepository(MongoDBRepository[Ingredient], IngredientRepos
     def __init__(self, config: MongoDBConfig, logger: Logger) -> None:
         super().__init__(config, Ingredient, logger)
 
+    def _to_doc(self, entity: Ingredient) -> dict[str, Any]:
+        doc = entity.model_dump(mode="json", exclude_computed_fields=True)
+        doc["_id"] = doc.pop("uuid")
+        return doc
+
     async def find_by_name(self, name: str) -> list[Ingredient]:
         async with self._collection() as col:
             escaped_name = re.escape(name)

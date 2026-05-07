@@ -143,6 +143,49 @@ async def test_create_recipe_with_ingredient_returns_active(client):
     assert data["status"] == "active"
 
 
+async def test_create_recipe_with_component_projects_child_lines(client):
+    child_response = await client.post(
+        "/v1/recipes/",
+        json=_complete_payload(name="Crème anglaise"),
+    )
+    child_uuid = child_response.json()["data"]["uuid"]
+
+    parent_response = await client.post(
+        "/v1/recipes/",
+        json={
+            "name": "Île flottante",
+            "servings": 4,
+            "components": [{
+                "recipe_uuid": child_uuid,
+                "label": "Crème anglaise",
+                "rank": 1,
+                "servings_multiplier": 2,
+            }],
+        },
+    )
+    parent_uuid = parent_response.json()["data"]["uuid"]
+    data = (await client.get(f"/v1/recipes/{parent_uuid}")).json()["data"]
+
+    assert data["status"] == "active"
+    assert data["ingredients"][0]["quantity"] == 1000
+    assert data["ingredients"][0]["line_origin"] == "component_projection"
+    assert data["ingredients"][0]["source_recipe_uuid"] == child_uuid
+    assert data["components"][0]["recipe_name"] == "Crème anglaise"
+    assert data["components"][0]["ingredients"][0]["quantity"] == 1000
+
+
+async def test_create_recipe_rejects_component_cycle(client):
+    created = await client.post("/v1/recipes/", json={"name": "Caramel", "servings": 2})
+    uuid = created.json()["data"]["uuid"]
+
+    response = await client.patch(
+        f"/v1/recipes/{uuid}",
+        json={"components": [{"recipe_uuid": uuid, "label": "Caramel", "rank": 1}]},
+    )
+
+    assert response.status_code == 422
+
+
 async def test_create_rejects_incomplete_ingredient_line(client):
     payload = _complete_payload(ingredients=[{"ingredient_uuid": INGREDIENT_UUID, "quantity": 500}])
     response = await client.post("/v1/recipes/", json=payload)
@@ -313,6 +356,23 @@ async def test_delete_returns_204(client, created):
     uuid = created["uuid"]
     response = await client.delete(f"/v1/recipes/{uuid}")
     assert response.status_code == 204
+
+
+async def test_delete_recipe_used_as_component_returns_409(client):
+    child = await client.post("/v1/recipes/", json=_complete_payload(name="Meringue"))
+    child_uuid = child.json()["data"]["uuid"]
+    await client.post(
+        "/v1/recipes/",
+        json={
+            "name": "Île flottante",
+            "servings": 4,
+            "components": [{"recipe_uuid": child_uuid, "label": "Meringue", "rank": 1}],
+        },
+    )
+
+    response = await client.delete(f"/v1/recipes/{child_uuid}")
+
+    assert response.status_code == 409
 
 
 async def test_delete_hides_from_get(client, created):

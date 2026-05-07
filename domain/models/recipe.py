@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 from arclith.domain.models.entity import Entity
 from domain.models.country import Country
 from domain.models.meal_category import MealCategory
+from domain.models.recipe_component import RecipeComponent
 from domain.models.recipe_equipment import RecipeEquipment
 from domain.models.recipe_ingredient import RecipeIngredient
 from domain.models.step import Step
@@ -93,6 +94,7 @@ class Recipe(Entity):
         default_factory=dict,
         description="Technical metadata captured during migration/import runs.",
     )
+    components: list[RecipeComponent] = Field(default_factory=list, description="Linked child recipes used as sub-recipes.")
     ingredients: list[RecipeIngredient] = Field(default_factory=list, description="Embedded list of recipe ingredients.")
     equipment: list[RecipeEquipment] = Field(default_factory=list, description="Embedded list of recipe equipment.")
     steps: list[Step] = Field(default_factory=list, description="Ordered list of recipe steps.")
