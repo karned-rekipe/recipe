@@ -1,0 +1,94 @@
+{
+  "tomate_enriched": {
+    "name": "Tomate",
+    "media_profile": {
+      "main_image_uri": "http://127.0.0.1:8030/v1/buckets/ingredients/objects/tomate.svg",
+      "image_status": "generated",
+      "image_prompt": "Photo produit simple et realiste de Tomate, fond neutre, sans texte.",
+      "source": "ai",
+      "validated": false
+    },
+    "seasonality_profile": {
+      "availability_type": "seasonal",
+      "months": {
+        "6": 2,
+        "7": 3,
+        "8": 3,
+        "9": 2
+      },
+      "geography": "FR",
+      "source": "dataset",
+      "confidence": 0.8,
+      "validated": false
+    },
+    "nutrition_profile": {
+      "kcal_per_100g": 18,
+      "kcal_per_100ml": null,
+      "nutri_score": "A",
+      "ciqual_code": null,
+      "source": "ciqual",
+      "confidence": 0.7,
+      "validated": false
+    },
+    "sustainability_profile": {
+      "carbon_kg_co2e_per_kg": 0.7,
+      "agribalyse_code": null,
+      "environmental_score": null,
+      "source": "agribalyse",
+      "confidence": 0.6,
+      "validated": false
+    },
+    "allergen_profile": {
+      "allergens": [],
+      "source": "regulation",
+      "confidence": 0.7,
+      "validated": false
+    },
+    "unit_profile": {
+      "reference_unit": "g",
+      "default_purchase_unit": "barquette",
+      "default_recipe_unit": "g",
+      "allowed_units": ["g", "kg", "piece", "barquette"],
+      "conversions": [
+        {
+          "from_unit": "kg",
+          "to_unit": "g",
+          "factor": 1000,
+          "source": "global",
+          "confidence": 1
+        }
+      ]
+    },
+    "package_profiles": [
+      {
+        "label": "barquette",
+        "package_unit": "barquette",
+        "net_quantity": 500,
+        "net_unit": "g",
+        "servings_count": null,
+        "serving_label": null,
+        "serving_quantity": null,
+        "serving_unit": null,
+        "source": "ai",
+        "validated": false
+      }
+    ],
+    "substitution_profile": {
+      "default_policy": "substitutable",
+      "substitute_ingredient_uuids": [],
+      "notes": "Substituable par d'autres legumes juteux selon la recette.",
+      "source": "ai",
+      "confidence": 0.4,
+      "validated": false
+    },
+    "enrichment_profile": {
+      "completeness_score": 100,
+      "status": "suggested",
+      "missing_fields": [],
+      "last_run_uuid": "019ab73e-ff10-741c-9f01-51414e165ed7",
+      "last_enriched_at": "2026-05-07T12:00:00+00:00",
+      "validated_fields": [],
+      "rejected_fields": []
+    }
+  }
+}
