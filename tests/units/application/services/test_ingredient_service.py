@@ -91,3 +91,19 @@ async def test_find_page_filtered_with_name(service):
     items, total = await service.find_page_filtered(name="tomate", offset=0, limit=10)
     assert total == 1
     assert items[0].name == "Tomate cerise"
+
+
+async def test_convert_unit_uses_global_registry(service):
+    ingredient = await service.create(Ingredient(name="Farine"))
+
+    result = await service.convert_unit(ingredient.uuid, 1.5, "kg", "g")
+
+    assert result["converted_quantity"] == 1500
+    assert result["source"] == "global"
+
+
+async def test_list_units_contains_shopping_purchase_units(service):
+    units = await service.list_units()
+    codes = {unit["code"] for unit in units}
+
+    assert {"paquet", "boite", "bouteille", "barquette"}.issubset(codes)

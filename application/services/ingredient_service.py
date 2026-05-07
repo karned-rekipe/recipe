@@ -20,6 +20,42 @@ class IngredientDuplicateMergeError(ValueError):
     """Raised when an ingredient duplicate merge cannot be applied."""
 
 
+class IngredientUnitConversionError(ValueError):
+    """Raised when an ingredient unit conversion cannot be resolved."""
+
+
+GLOBAL_UNITS: tuple[dict[str, str], ...] = (
+    {"code": "g", "label": "gramme", "kind": "mass"},
+    {"code": "kg", "label": "kilogramme", "kind": "mass"},
+    {"code": "ml", "label": "millilitre", "kind": "volume"},
+    {"code": "cl", "label": "centilitre", "kind": "volume"},
+    {"code": "l", "label": "litre", "kind": "volume"},
+    {"code": "piece", "label": "piece", "kind": "count"},
+    {"code": "cac", "label": "cuillere a cafe", "kind": "kitchen"},
+    {"code": "cas", "label": "cuillere a soupe", "kind": "kitchen"},
+    {"code": "pincee", "label": "pincee", "kind": "kitchen"},
+    {"code": "verre", "label": "verre", "kind": "kitchen"},
+    {"code": "tranche", "label": "tranche", "kind": "kitchen"},
+    {"code": "paquet", "label": "paquet", "kind": "purchase"},
+    {"code": "boite", "label": "boite", "kind": "purchase"},
+    {"code": "bouteille", "label": "bouteille", "kind": "purchase"},
+    {"code": "barquette", "label": "barquette", "kind": "purchase"},
+    {"code": "serving", "label": "portion", "kind": "business"},
+    {"code": "portion", "label": "portion", "kind": "business"},
+)
+
+GLOBAL_CONVERSIONS: dict[tuple[str, str], float] = {
+    ("kg", "g"): 1000.0,
+    ("g", "kg"): 0.001,
+    ("l", "ml"): 1000.0,
+    ("ml", "l"): 0.001,
+    ("cl", "ml"): 10.0,
+    ("ml", "cl"): 0.1,
+    ("l", "cl"): 100.0,
+    ("cl", "l"): 0.01,
+}
+
+
 class IngredientService(BaseService[Ingredient]):
     def __init__(
         self,
@@ -127,6 +163,42 @@ class IngredientService(BaseService[Ingredient]):
             "updated_recipe_count": updated_recipe_count,
             "deleted_count": len(duplicates),
         }
+
+    async def list_units(self) -> list[dict[str, str]]:
+        return [dict(unit) for unit in GLOBAL_UNITS]
+
+    async def convert_unit(
+        self,
+        ingredient_uuid: UUID,
+        quantity: float,
+        from_unit: str,
+        to_unit: str,
+    ) -> dict[str, Any]:
+        ingredient = await self.read(ingredient_uuid)
+        if ingredient is None or ingredient.is_deleted:
+            raise IngredientUnitConversionError("Ingredient not found")
+        factor, source = self._find_conversion_factor(ingredient, from_unit, to_unit)
+        return {
+            "ingredient_uuid": ingredient.uuid,
+            "quantity": quantity,
+            "from_unit": from_unit,
+            "converted_quantity": quantity * factor,
+            "to_unit": to_unit,
+            "factor": factor,
+            "source": source,
+        }
+
+    @staticmethod
+    def _find_conversion_factor(ingredient: Ingredient, from_unit: str, to_unit: str) -> tuple[float, str]:
+        if from_unit == to_unit:
+            return 1.0, "identity"
+        global_factor = GLOBAL_CONVERSIONS.get((from_unit, to_unit))
+        if global_factor is not None:
+            return global_factor, "global"
+        for conversion in ingredient.unit_profile.conversions:
+            if conversion.from_unit == from_unit and conversion.to_unit == to_unit:
+                return conversion.factor, conversion.source
+        raise IngredientUnitConversionError(f"No conversion available from {from_unit} to {to_unit}")
 
     async def _ensure_references_exist(self, ingredient: Ingredient) -> None:
         errors: list[str] = []

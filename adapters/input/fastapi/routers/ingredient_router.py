@@ -11,10 +11,27 @@ from adapters.input.schemas.ingredient_schema import (
     IngredientCreateSchema,
     IngredientPatchSchema,
     IngredientSchema,
+    IngredientUnitConversionRequestSchema,
+    IngredientUnitConversionResponseSchema,
     IngredientUpdateSchema,
 )
+from adapters.input.schemas.ingredient_enrichment_suggestion_schema import (
+    IngredientEnrichmentSuggestionActionSchema,
+    IngredientEnrichmentSuggestionCreatedSchema,
+    IngredientEnrichmentSuggestionCreateSchema,
+    IngredientEnrichmentSuggestionSchema,
+)
 from adapters.input.schemas.recipe_schema import RecipeSchema
-from application.services.ingredient_service import IngredientDuplicateMergeError, IngredientReferenceError, IngredientService
+from application.services.ingredient_enrichment_suggestion_service import (
+    IngredientEnrichmentSuggestionError,
+    IngredientEnrichmentSuggestionService,
+)
+from application.services.ingredient_service import (
+    IngredientDuplicateMergeError,
+    IngredientReferenceError,
+    IngredientService,
+    IngredientUnitConversionError,
+)
 from application.services.recipe_service import RecipeMergeConflict, RecipeService
 from arclith.adapters.input.fastapi.dependencies import get_duration_ms
 from arclith.adapters.input.schemas.response_wrapper import (
@@ -26,13 +43,21 @@ from arclith.adapters.input.schemas.response_wrapper import (
 )
 from arclith.domain.ports.logger import Logger
 from domain.models.ingredient import Ingredient
+from domain.models.ingredient_enrichment_suggestion import IngredientEnrichmentSuggestion
 
 
 class IngredientRouter:
-    def __init__(self, service: IngredientService, logger: Logger, recipe_service: RecipeService | None = None) -> None:
+    def __init__(
+        self,
+        service: IngredientService,
+        logger: Logger,
+        recipe_service: RecipeService | None = None,
+        suggestion_service: IngredientEnrichmentSuggestionService | None = None,
+    ) -> None:
         self._service = service
         self._logger = logger
         self._recipe_service = recipe_service
+        self._suggestion_service = suggestion_service
         self.router = APIRouter(prefix="/v1/ingredients", tags=["ingredients"], dependencies=[Depends(inject_tenant_uri)])
         self._register_routes()
 
@@ -144,6 +169,48 @@ class IngredientRouter:
                 404: {"description": "Ingredient not found"},
             },
         )
+        self.router.add_api_route(
+            methods=["POST"],
+            path="/{uuid}/convert",
+            endpoint=self.convert_unit,
+            summary="Convert an ingredient quantity between units",
+            response_model=ApiResponse[IngredientUnitConversionResponseSchema],
+            status_code=200,
+            responses={422: {"description": "Conversion unavailable"}},
+        )
+        self.router.add_api_route(
+            methods=["GET"],
+            path="/{uuid}/enrichment-suggestions",
+            endpoint=self.list_enrichment_suggestions,
+            summary="List ingredient enrichment suggestions",
+            response_model=ApiResponse[list[IngredientEnrichmentSuggestionSchema]],
+            status_code=200,
+        )
+        self.router.add_api_route(
+            methods=["POST"],
+            path="/{uuid}/enrichment-suggestions",
+            endpoint=self.create_enrichment_suggestion,
+            summary="Create ingredient enrichment suggestion",
+            response_model=ApiResponse[IngredientEnrichmentSuggestionCreatedSchema],
+            status_code=201,
+            responses={404: {"description": "Ingredient not found"}},
+        )
+        self.router.add_api_route(
+            methods=["POST"],
+            path="/{uuid}/enrichment-suggestions/{suggestion_uuid}/apply",
+            endpoint=self.apply_enrichment_suggestion,
+            summary="Apply ingredient enrichment suggestion",
+            response_model=ApiResponse[IngredientEnrichmentSuggestionSchema],
+            status_code=200,
+        )
+        self.router.add_api_route(
+            methods=["POST"],
+            path="/{uuid}/enrichment-suggestions/{suggestion_uuid}/reject",
+            endpoint=self.reject_enrichment_suggestion,
+            summary="Reject ingredient enrichment suggestion",
+            response_model=ApiResponse[IngredientEnrichmentSuggestionSchema],
+            status_code=200,
+        )
 
     @staticmethod
     def _to_uuid6(uuid: StdUUID) -> UUID:
@@ -163,10 +230,21 @@ class IngredientRouter:
                 name=payload.name,
                 rayon_uuid=self._to_uuid6(payload.rayon_uuid) if payload.rayon_uuid is not None else None,
                 group_uuid=self._to_uuid6(payload.group_uuid) if payload.group_uuid is not None else None,
+                main_supplier_uuid=self._to_uuid6(payload.main_supplier_uuid) if payload.main_supplier_uuid is not None else None,
+                secondary_supplier_uuids=[self._to_uuid6(uuid) for uuid in payload.secondary_supplier_uuids],
                 green_score=payload.green_score,
                 unit=payload.unit,
                 quantity=payload.quantity,
                 season_months=payload.season_months,
+                media_profile=payload.media_profile,
+                seasonality_profile=payload.seasonality_profile,
+                nutrition_profile=payload.nutrition_profile,
+                sustainability_profile=payload.sustainability_profile,
+                allergen_profile=payload.allergen_profile,
+                unit_profile=payload.unit_profile,
+                package_profiles=payload.package_profiles,
+                substitution_profile=payload.substitution_profile,
+                enrichment_profile=payload.enrichment_profile,
             ))
         except IngredientReferenceError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -242,10 +320,21 @@ class IngredientRouter:
                 name=payload.name,
                 rayon_uuid=self._to_uuid6(payload.rayon_uuid) if payload.rayon_uuid is not None else None,
                 group_uuid=self._to_uuid6(payload.group_uuid) if payload.group_uuid is not None else None,
+                main_supplier_uuid=self._to_uuid6(payload.main_supplier_uuid) if payload.main_supplier_uuid is not None else None,
+                secondary_supplier_uuids=[self._to_uuid6(uuid) for uuid in payload.secondary_supplier_uuids],
                 green_score=payload.green_score,
                 unit=payload.unit,
                 quantity=payload.quantity,
                 season_months=payload.season_months,
+                media_profile=payload.media_profile,
+                seasonality_profile=payload.seasonality_profile,
+                nutrition_profile=payload.nutrition_profile,
+                sustainability_profile=payload.sustainability_profile,
+                allergen_profile=payload.allergen_profile,
+                unit_profile=payload.unit_profile,
+                package_profiles=payload.package_profiles,
+                substitution_profile=payload.substitution_profile,
+                enrichment_profile=payload.enrichment_profile,
             ))
         except IngredientReferenceError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -292,10 +381,39 @@ class IngredientRouter:
                 group_uuid=self._to_uuid6(payload.group_uuid)
                 if "group_uuid" in fields_set and payload.group_uuid is not None
                 else None if "group_uuid" in fields_set else existing.group_uuid,
+                main_supplier_uuid=self._to_uuid6(payload.main_supplier_uuid)
+                if "main_supplier_uuid" in fields_set and payload.main_supplier_uuid is not None
+                else None if "main_supplier_uuid" in fields_set else existing.main_supplier_uuid,
+                secondary_supplier_uuids=[self._to_uuid6(supplier_uuid) for supplier_uuid in payload.secondary_supplier_uuids]
+                if "secondary_supplier_uuids" in fields_set and payload.secondary_supplier_uuids is not None
+                else [] if "secondary_supplier_uuids" in fields_set else existing.secondary_supplier_uuids,
                 green_score=payload.green_score if "green_score" in fields_set else existing.green_score,
                 unit=payload.unit if "unit" in fields_set else existing.unit,
                 quantity=payload.quantity if "quantity" in fields_set else existing.quantity,
                 season_months=payload.season_months if payload.season_months is not None else existing.season_months,
+                media_profile=payload.media_profile if "media_profile" in fields_set and payload.media_profile is not None else existing.media_profile,
+                seasonality_profile=payload.seasonality_profile
+                if "seasonality_profile" in fields_set and payload.seasonality_profile is not None
+                else existing.seasonality_profile,
+                nutrition_profile=payload.nutrition_profile
+                if "nutrition_profile" in fields_set and payload.nutrition_profile is not None
+                else existing.nutrition_profile,
+                sustainability_profile=payload.sustainability_profile
+                if "sustainability_profile" in fields_set and payload.sustainability_profile is not None
+                else existing.sustainability_profile,
+                allergen_profile=payload.allergen_profile
+                if "allergen_profile" in fields_set and payload.allergen_profile is not None
+                else existing.allergen_profile,
+                unit_profile=payload.unit_profile if "unit_profile" in fields_set and payload.unit_profile is not None else existing.unit_profile,
+                package_profiles=payload.package_profiles
+                if "package_profiles" in fields_set and payload.package_profiles is not None
+                else existing.package_profiles,
+                substitution_profile=payload.substitution_profile
+                if "substitution_profile" in fields_set and payload.substitution_profile is not None
+                else existing.substitution_profile,
+                enrichment_profile=payload.enrichment_profile
+                if "enrichment_profile" in fields_set and payload.enrichment_profile is not None
+                else existing.enrichment_profile,
             ))
         except IngredientReferenceError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -426,3 +544,108 @@ class IngredientRouter:
             IngredientCreatedSchema(uuid=result.uuid),
             metadata=ResponseMetadata(duration_ms=int(duration_ms)),
         )
+
+    async def convert_unit(
+        self,
+        uuid: StdUUID,
+        payload: IngredientUnitConversionRequestSchema,
+        duration_ms: Annotated[float, Depends(get_duration_ms)],
+    ) -> ApiResponse[IngredientUnitConversionResponseSchema]:
+        """Convert an ingredient quantity between global or ingredient-specific units."""
+        try:
+            result = await self._service.convert_unit(
+                self._to_uuid6(uuid),
+                payload.quantity,
+                payload.from_unit,
+                payload.to_unit,
+            )
+        except IngredientUnitConversionError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return success_response(
+            IngredientUnitConversionResponseSchema.model_validate(result),
+            metadata=ResponseMetadata(duration_ms=int(duration_ms)),
+        )
+
+    async def list_enrichment_suggestions(
+        self,
+        uuid: StdUUID,
+        duration_ms: Annotated[float, Depends(get_duration_ms)],
+    ) -> ApiResponse[list[IngredientEnrichmentSuggestionSchema]]:
+        """List enrichment suggestions for an ingredient."""
+        suggestion_service = self._require_suggestion_service()
+        suggestions = await suggestion_service.find_by_ingredient_uuid(self._to_uuid6(uuid))
+        return success_response(
+            [IngredientEnrichmentSuggestionSchema.model_validate(item) for item in suggestions],
+            metadata=ResponseMetadata(duration_ms=int(duration_ms)),
+        )
+
+    async def create_enrichment_suggestion(
+        self,
+        uuid: StdUUID,
+        payload: IngredientEnrichmentSuggestionCreateSchema,
+        duration_ms: Annotated[float, Depends(get_duration_ms)],
+    ) -> ApiResponse[IngredientEnrichmentSuggestionCreatedSchema]:
+        """Create a traceable enrichment suggestion for an ingredient."""
+        suggestion_service = self._require_suggestion_service()
+        try:
+            suggestion = await suggestion_service.create(
+                IngredientEnrichmentSuggestion(
+                    ingredient_uuid=self._to_uuid6(uuid),
+                    run_uuid=self._to_uuid6(payload.run_uuid),
+                    proposed_patch=payload.proposed_patch,
+                    field_confidences=payload.field_confidences,
+                    field_sources=payload.field_sources,
+                    reasoning_summary=payload.reasoning_summary,
+                )
+            )
+        except IngredientEnrichmentSuggestionError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return success_response(
+            IngredientEnrichmentSuggestionCreatedSchema(uuid=suggestion.uuid),
+            metadata=ResponseMetadata(duration_ms=int(duration_ms)),
+        )
+
+    async def apply_enrichment_suggestion(
+        self,
+        uuid: StdUUID,
+        suggestion_uuid: StdUUID,
+        payload: IngredientEnrichmentSuggestionActionSchema,
+        duration_ms: Annotated[float, Depends(get_duration_ms)],
+    ) -> ApiResponse[IngredientEnrichmentSuggestionSchema]:
+        """Apply selected fields from an enrichment suggestion."""
+        suggestion_service = self._require_suggestion_service()
+        try:
+            suggestion = await suggestion_service.apply(
+                self._to_uuid6(uuid),
+                self._to_uuid6(suggestion_uuid),
+                fields=payload.fields,
+                force=payload.force,
+            )
+        except IngredientEnrichmentSuggestionError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return success_response(
+            IngredientEnrichmentSuggestionSchema.model_validate(suggestion),
+            metadata=ResponseMetadata(duration_ms=int(duration_ms)),
+        )
+
+    async def reject_enrichment_suggestion(
+        self,
+        uuid: StdUUID,
+        suggestion_uuid: StdUUID,
+        duration_ms: Annotated[float, Depends(get_duration_ms)],
+    ) -> ApiResponse[IngredientEnrichmentSuggestionSchema]:
+        """Reject an enrichment suggestion."""
+        suggestion_service = self._require_suggestion_service()
+        try:
+            suggestion = await suggestion_service.reject(self._to_uuid6(uuid), self._to_uuid6(suggestion_uuid))
+        except IngredientEnrichmentSuggestionError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return success_response(
+            IngredientEnrichmentSuggestionSchema.model_validate(suggestion),
+            metadata=ResponseMetadata(duration_ms=int(duration_ms)),
+        )
+
+    def _require_suggestion_service(self) -> IngredientEnrichmentSuggestionService:
+        if self._suggestion_service is None:
+            raise HTTPException(status_code=503, detail="Ingredient enrichment suggestions are not available")
+        return self._suggestion_service

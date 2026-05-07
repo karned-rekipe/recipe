@@ -4,6 +4,17 @@ from uuid import UUID as StdUUID
 from arclith.adapters.input.schemas.base_schema import BaseSchema
 from adapters.input.schemas.ingredient_group_schema import IngredientGroupSchema
 from adapters.input.schemas.ingredient_rayon_schema import IngredientRayonSchema
+from domain.models.ingredient import (
+    AllergenProfile,
+    EnrichmentProfile,
+    MediaProfile,
+    NutritionProfile,
+    PackageProfile,
+    SeasonalityProfile,
+    SubstitutionProfile,
+    SustainabilityProfile,
+    UnitProfile,
+)
 
 
 class IngredientCreateSchema(BaseModel):
@@ -15,14 +26,25 @@ class IngredientCreateSchema(BaseModel):
     )
     rayon_uuid: StdUUID | None = Field(None, description="Shelf/aisle UUID.")
     group_uuid: StdUUID | None = Field(None, description="Food group UUID.")
+    main_supplier_uuid: StdUUID | None = Field(None, description="Preferred supplier UUID.")
+    secondary_supplier_uuids: list[StdUUID] = Field(default_factory=list, description="Other possible supplier UUIDs.")
     green_score: int | None = Field(None, description="Environmental score (OpenFoodFacts scale).", ge=0, examples=[80])
     unit: str | None = Field(None, description="Unit of measure.", examples=["g", "ml", "pièce"])
     quantity: float | None = Field(None, description="Default quantity.", ge=0, examples=[100.0])
     season_months: dict[int, int] = Field(
         default_factory=dict,
-        description="Seasonality map: month (1-12) → score (1-3), 3 = peak season.",
+        description="Legacy seasonality hint. Empty means unknown, not year-round.",
         examples=[{6: 2, 7: 3, 8: 3, 9: 2}],
     )
+    media_profile: MediaProfile = Field(default_factory=MediaProfile)
+    seasonality_profile: SeasonalityProfile = Field(default_factory=SeasonalityProfile)
+    nutrition_profile: NutritionProfile = Field(default_factory=NutritionProfile)
+    sustainability_profile: SustainabilityProfile = Field(default_factory=SustainabilityProfile)
+    allergen_profile: AllergenProfile = Field(default_factory=AllergenProfile)
+    unit_profile: UnitProfile = Field(default_factory=UnitProfile)
+    package_profiles: list[PackageProfile] = Field(default_factory=list)
+    substitution_profile: SubstitutionProfile = Field(default_factory=SubstitutionProfile)
+    enrichment_profile: EnrichmentProfile = Field(default_factory=EnrichmentProfile)
 
     @field_validator("name", mode="before")
     @classmethod
@@ -47,10 +69,21 @@ class IngredientPatchSchema(BaseModel):
     name: str | None = Field(None, description="New ingredient name.", min_length=1, examples=["Farine complète"])
     rayon_uuid: StdUUID | None = Field(None, description="Shelf/aisle UUID.")
     group_uuid: StdUUID | None = Field(None, description="Food group UUID.")
+    main_supplier_uuid: StdUUID | None = Field(None, description="Preferred supplier UUID.")
+    secondary_supplier_uuids: list[StdUUID] | None = Field(None, description="Other possible supplier UUIDs.")
     green_score: int | None = Field(None, description="Environmental score.", ge=0, examples=[60])
     unit: str | None = Field(None, description="Unit of measure.", examples=["kg"])
     quantity: float | None = Field(None, description="Default quantity.", ge=0, examples=[500.0])
     season_months: dict[int, int] | None = Field(None, description="Seasonality map.")
+    media_profile: MediaProfile | None = None
+    seasonality_profile: SeasonalityProfile | None = None
+    nutrition_profile: NutritionProfile | None = None
+    sustainability_profile: SustainabilityProfile | None = None
+    allergen_profile: AllergenProfile | None = None
+    unit_profile: UnitProfile | None = None
+    package_profiles: list[PackageProfile] | None = None
+    substitution_profile: SubstitutionProfile | None = None
+    enrichment_profile: EnrichmentProfile | None = None
 
     @field_validator("season_months", mode="before")
     @classmethod
@@ -77,13 +110,46 @@ class IngredientCreatedSchema(BaseModel):
     )
 
 
+class UnitSchema(BaseModel):
+    code: str
+    label: str
+    kind: str
+
+
+class IngredientUnitConversionRequestSchema(BaseModel):
+    quantity: float = Field(gt=0)
+    from_unit: str = Field(min_length=1)
+    to_unit: str = Field(min_length=1)
+
+
+class IngredientUnitConversionResponseSchema(BaseModel):
+    ingredient_uuid: StdUUID
+    quantity: float
+    from_unit: str
+    converted_quantity: float
+    to_unit: str
+    factor: float
+    source: str
+
+
 class IngredientSchema(BaseSchema):
     name: str = Field(..., description="Ingredient name.", examples=["Tomate"])
     rayon_uuid: StdUUID | None = Field(None, description="Shelf/aisle UUID.")
     group_uuid: StdUUID | None = Field(None, description="Food group UUID.")
+    main_supplier_uuid: StdUUID | None = Field(None, description="Preferred supplier UUID.")
+    secondary_supplier_uuids: list[StdUUID] = Field(default_factory=list, description="Other possible supplier UUIDs.")
     rayon: IngredientRayonSchema | None = Field(None, description="Hydrated shelf/aisle.")
     group: IngredientGroupSchema | None = Field(None, description="Hydrated food group.")
     green_score: int | None = Field(None, description="Environmental score.")
     unit: str | None = Field(None, description="Unit of measure.")
     quantity: float | None = Field(None, description="Default quantity.")
     season_months: dict[int, int] = Field(default_factory=dict, description="Seasonality map.")
+    media_profile: MediaProfile = Field(default_factory=MediaProfile)
+    seasonality_profile: SeasonalityProfile = Field(default_factory=SeasonalityProfile)
+    nutrition_profile: NutritionProfile = Field(default_factory=NutritionProfile)
+    sustainability_profile: SustainabilityProfile = Field(default_factory=SustainabilityProfile)
+    allergen_profile: AllergenProfile = Field(default_factory=AllergenProfile)
+    unit_profile: UnitProfile = Field(default_factory=UnitProfile)
+    package_profiles: list[PackageProfile] = Field(default_factory=list)
+    substitution_profile: SubstitutionProfile = Field(default_factory=SubstitutionProfile)
+    enrichment_profile: EnrichmentProfile = Field(default_factory=EnrichmentProfile)

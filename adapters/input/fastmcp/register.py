@@ -6,6 +6,7 @@ from arclith import Arclith
 from infrastructure.containers.equipment_container import build_equipment_service
 from infrastructure.containers.ingredient_group_container import build_ingredient_group_service
 from infrastructure.containers.ingredient_container import build_ingredient_service
+from infrastructure.containers.ingredient_enrichment_suggestion_container import build_ingredient_enrichment_suggestion_service
 from infrastructure.containers.ingredient_rayon_container import build_ingredient_rayon_service
 from infrastructure.containers.recipe_container import build_recipe_service
 from infrastructure.containers.tag_container import build_tag_service
@@ -31,12 +32,17 @@ def register_tools(mcp: fastmcp.FastMCP, arclith: Arclith) -> None:
         group_repository=group_service.repository,
         rayon_repository=rayon_service.repository,
     )
+    suggestion_service, _ = build_ingredient_enrichment_suggestion_service(
+        arclith,
+        ingredient_service.repository,
+    )
 
     purge_registry.register("recipes", recipe_service.purge)
     RecipeMCP(recipe_service, logger, mcp)
 
     purge_registry.register("ingredients", ingredient_service.purge)
-    IngredientMCP(ingredient_service, ingredient_logger, mcp, recipe_service)
+    IngredientMCP(ingredient_service, ingredient_logger, mcp, recipe_service, suggestion_service)
+    purge_registry.register("ingredient_enrichment_suggestions", suggestion_service.purge)
 
     purge_registry.register("equipment", equipment_service.purge)
     EquipmentMCP(equipment_service, equipment_logger, mcp, recipe_service)
