@@ -80,3 +80,91 @@ async def test_merge_duplicates_rewrites_recipes_and_soft_deletes_duplicate(clie
     updated = await recipe_service.read(recipe.uuid)
     assert updated is not None
     assert str(updated.equipment[0].equipment_uuid) == target
+
+
+async def test_create_get_update_patch_list_recipes_and_delete(client, recipe_service):
+    created_response = await client.post("/v1/equipment/", json=_payload(name="Four", description="Chaleur tournante"))
+
+    assert created_response.status_code == 201
+    assert created_response.headers["location"].startswith("/v1/equipment/")
+    uuid = created_response.json()["data"]["uuid"]
+
+    listed_response = await client.get("/v1/equipment/?name=four")
+    assert listed_response.status_code == 200
+    assert listed_response.headers["x-total-count"] == "1"
+    assert listed_response.json()["data"][0]["name"] == "Four"
+
+    fetched_response = await client.get(f"/v1/equipment/{uuid}")
+    assert fetched_response.status_code == 200
+    assert fetched_response.headers["etag"] == '"1"'
+    assert 'rel="duplicate"' in fetched_response.headers["link"]
+
+    update_response = await client.put(
+        f"/v1/equipment/{uuid}",
+        json=_payload(name="Four vapeur", description="Avec vapeur"),
+        headers={"If-Match": '"1"'},
+    )
+    assert update_response.status_code == 204
+    assert update_response.headers["content-location"] == f"/v1/equipment/{uuid}"
+
+    patch_response = await client.patch(f"/v1/equipment/{uuid}", json={"description": "Compact"})
+    assert patch_response.status_code == 204
+
+    recipe = await recipe_service.create(Recipe(
+        name="Gratin dauphinois",
+        servings=4,
+        equipment=[RecipeEquipment(equipment_uuid=UUID(uuid))],
+    ))
+    recipes_response = await client.get(f"/v1/equipment/{uuid}/recipes")
+    assert recipes_response.status_code == 200
+    assert recipes_response.headers["x-total-count"] == "1"
+    assert recipes_response.json()["data"][0]["uuid"] == str(recipe.uuid)
+
+    delete_used_response = await client.delete(f"/v1/equipment/{uuid}")
+    assert delete_used_response.status_code == 409
+
+    duplicate_response = await client.post(f"/v1/equipment/{uuid}/duplicate")
+    assert duplicate_response.status_code == 201
+    duplicate_uuid = duplicate_response.json()["data"]["uuid"]
+
+    delete_duplicate_response = await client.delete(f"/v1/equipment/{duplicate_uuid}")
+    assert delete_duplicate_response.status_code == 204
+    assert (await client.get(f"/v1/equipment/{duplicate_uuid}")).status_code == 404
+
+
+async def test_update_and_patch_reject_version_mismatch(client):
+    uuid = (await client.post("/v1/equipment/", json=_payload(name="Robot"))).json()["data"]["uuid"]
+
+    update_response = await client.put(
+        f"/v1/equipment/{uuid}",
+        json=_payload(name="Robot pâtissier"),
+        headers={"If-Match": '"999"'},
+    )
+    patch_response = await client.patch(
+        f"/v1/equipment/{uuid}",
+        json={"description": "Bol inox"},
+        headers={"If-Match": '"999"'},
+    )
+
+    assert update_response.status_code == 412
+    assert patch_response.status_code == 412
+
+
+async def test_missing_equipment_routes_return_404(client):
+    missing_uuid = "01951234-5678-7abc-def0-000000000000"
+
+    assert (await client.get(f"/v1/equipment/{missing_uuid}")).status_code == 404
+    assert (await client.put(f"/v1/equipment/{missing_uuid}", json=_payload(name="Mandoline"))).status_code == 404
+    assert (await client.patch(f"/v1/equipment/{missing_uuid}", json={"description": "Fine"})).status_code == 404
+    assert (await client.get(f"/v1/equipment/{missing_uuid}/recipes")).status_code == 404
+
+
+async def test_merge_duplicates_rejects_target_in_duplicate_list(client):
+    uuid = (await client.post("/v1/equipment/", json=_payload(name="Mixeur"))).json()["data"]["uuid"]
+
+    response = await client.post(
+        "/v1/equipment/duplicates/merge",
+        json={"target_uuid": uuid, "duplicate_uuids": [uuid]},
+    )
+
+    assert response.status_code == 409
