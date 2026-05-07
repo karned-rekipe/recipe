@@ -51,11 +51,12 @@ class IngredientEnrichmentSuggestionService(BaseService[IngredientEnrichmentSugg
         if suggestion.status not in {"pending", "partially_applied"}:
             raise IngredientEnrichmentSuggestionError(f"Suggestion status does not allow apply: {suggestion.status}")
 
-        requested_fields = set(fields or suggestion.proposed_patch)
+        requested_fields = self._select_requested_fields(suggestion, fields)
+        rejected_fields = set(suggestion.rejected_fields)
         applicable_patch: dict[str, Any] = {}
         skipped_fields: list[str] = []
         for field_name, value in suggestion.proposed_patch.items():
-            if field_name not in requested_fields:
+            if field_name not in requested_fields or field_name in rejected_fields:
                 continue
             if not force and self._is_validated_field(ingredient, field_name):
                 skipped_fields.append(field_name)
@@ -67,8 +68,17 @@ class IngredientEnrichmentSuggestionService(BaseService[IngredientEnrichmentSugg
             updated_payload.update(applicable_patch)
             await self._ingredient_repo.update(Ingredient.model_validate(updated_payload))
 
-        new_status = "applied" if applicable_patch and not skipped_fields else "partially_applied"
-        updated = suggestion.model_copy(update={"status": new_status, "applied_at": datetime.now(UTC)})
+        applied_fields = self._merge_fields(suggestion.applied_fields, applicable_patch)
+        new_status = self._status_from_field_sets(suggestion, applied_fields, suggestion.rejected_fields)
+        if skipped_fields and new_status == "pending":
+            new_status = "partially_applied"
+        updated = suggestion.model_copy(
+            update={
+                "status": new_status,
+                "applied_fields": applied_fields,
+                "applied_at": datetime.now(UTC) if applicable_patch else suggestion.applied_at,
+            }
+        )
         self._logger.info(
             "Ingredient enrichment suggestion applied",
             ingredient_uuid=str(ingredient_uuid),
@@ -78,9 +88,41 @@ class IngredientEnrichmentSuggestionService(BaseService[IngredientEnrichmentSugg
         )
         return await self._suggestion_repo.update(updated)
 
-    async def reject(self, ingredient_uuid: UUID, suggestion_uuid: UUID) -> IngredientEnrichmentSuggestion:
+    async def reject(
+        self,
+        ingredient_uuid: UUID,
+        suggestion_uuid: UUID,
+        fields: list[str] | None = None,
+    ) -> IngredientEnrichmentSuggestion:
+        ingredient = await self._read_ingredient(ingredient_uuid)
         suggestion = await self._read_suggestion(ingredient_uuid, suggestion_uuid)
-        updated = suggestion.model_copy(update={"status": "rejected", "rejected_at": datetime.now(UTC)})
+        if suggestion.status not in {"pending", "partially_applied"}:
+            raise IngredientEnrichmentSuggestionError(f"Suggestion status does not allow reject: {suggestion.status}")
+
+        requested_fields = self._select_requested_fields(suggestion, fields)
+        rejected_fields = self._merge_fields(suggestion.rejected_fields, requested_fields)
+        updated_ingredient = ingredient.model_copy(
+            update={
+                "enrichment_profile": ingredient.enrichment_profile.model_copy(
+                    update={
+                        "rejected_fields": self._merge_fields(
+                            ingredient.enrichment_profile.rejected_fields,
+                            requested_fields,
+                        )
+                    }
+                )
+            }
+        )
+        await self._ingredient_repo.update(updated_ingredient)
+
+        new_status = self._status_from_field_sets(suggestion, suggestion.applied_fields, rejected_fields)
+        updated = suggestion.model_copy(
+            update={
+                "status": new_status,
+                "rejected_fields": rejected_fields,
+                "rejected_at": datetime.now(UTC) if new_status == "rejected" else suggestion.rejected_at,
+            }
+        )
         return await self._suggestion_repo.update(updated)
 
     async def _read_ingredient(self, ingredient_uuid: UUID) -> Ingredient:
@@ -108,3 +150,41 @@ class IngredientEnrichmentSuggestionService(BaseService[IngredientEnrichmentSugg
         if field_name == "enrichment_profile":
             return ingredient.enrichment_profile.status == "validated"
         return False
+
+    @staticmethod
+    def _select_requested_fields(
+        suggestion: IngredientEnrichmentSuggestion,
+        fields: list[str] | None,
+    ) -> set[str]:
+        proposed_fields = set(suggestion.proposed_patch)
+        if fields is None:
+            return proposed_fields
+        requested_fields = set(fields)
+        unknown_fields = requested_fields - proposed_fields
+        if unknown_fields:
+            raise IngredientEnrichmentSuggestionError(
+                f"Fields are not part of this suggestion: {', '.join(sorted(unknown_fields))}"
+            )
+        return requested_fields
+
+    @staticmethod
+    def _merge_fields(existing_fields: list[str], new_fields: set[str] | dict[str, Any]) -> list[str]:
+        return sorted(set(existing_fields) | set(new_fields))
+
+    @staticmethod
+    def _status_from_field_sets(
+        suggestion: IngredientEnrichmentSuggestion,
+        applied_fields: list[str],
+        rejected_fields: list[str],
+    ) -> str:
+        proposed_fields = set(suggestion.proposed_patch)
+        applied = set(applied_fields)
+        rejected = set(rejected_fields)
+        resolved = applied | rejected
+        if proposed_fields and proposed_fields <= rejected:
+            return "rejected"
+        if proposed_fields and proposed_fields <= applied:
+            return "applied"
+        if resolved:
+            return "partially_applied"
+        return "pending"

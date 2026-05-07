@@ -633,13 +633,19 @@ class IngredientRouter:
         uuid: StdUUID,
         suggestion_uuid: StdUUID,
         duration_ms: Annotated[float, Depends(get_duration_ms)],
+        payload: IngredientEnrichmentSuggestionActionSchema | None = None,
     ) -> ApiResponse[IngredientEnrichmentSuggestionSchema]:
         """Reject an enrichment suggestion."""
         suggestion_service = self._require_suggestion_service()
         try:
-            suggestion = await suggestion_service.reject(self._to_uuid6(uuid), self._to_uuid6(suggestion_uuid))
+            suggestion = await suggestion_service.reject(
+                self._to_uuid6(uuid),
+                self._to_uuid6(suggestion_uuid),
+                fields=payload.fields if payload is not None else None,
+            )
         except IngredientEnrichmentSuggestionError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+            status_code = 404 if "not found" in str(exc).lower() else 409
+            raise HTTPException(status_code=status_code, detail=str(exc)) from exc
         return success_response(
             IngredientEnrichmentSuggestionSchema.model_validate(suggestion),
             metadata=ResponseMetadata(duration_ms=int(duration_ms)),

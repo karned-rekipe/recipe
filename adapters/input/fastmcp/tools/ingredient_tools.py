@@ -341,6 +341,7 @@ class IngredientMCP:
         async def reject_ingredient_enrichment_suggestion(
                 ingredient_uuid: Annotated[str, Field(description="Ingredient UUID.")],
                 suggestion_uuid: Annotated[str, Field(description="Suggestion UUID.")],
+                fields: Annotated[list[str] | None, Field(default=None, description="Optional top-level fields to reject.")] = None,
                 ctx: fastmcp.Context | None = None,
         ) -> dict:
             """Reject a V5 enrichment suggestion."""
@@ -351,5 +352,6 @@ class IngredientMCP:
             suggestion = await suggestion_service.reject(
                 to_uuid6(StdUUID(ingredient_uuid)),
                 to_uuid6(StdUUID(suggestion_uuid)),
+                fields=fields,
             )
             return IngredientEnrichmentSuggestionSchema.model_validate(suggestion).model_dump(mode="json")

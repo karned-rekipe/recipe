@@ -32,6 +32,8 @@ class IngredientEnrichmentSuggestionSchema(BaseSchema):
     proposed_patch: dict[str, Any] = Field(default_factory=dict)
     field_confidences: dict[str, float] = Field(default_factory=dict)
     field_sources: dict[str, str] = Field(default_factory=dict)
+    applied_fields: list[str] = Field(default_factory=list)
+    rejected_fields: list[str] = Field(default_factory=list)
     reasoning_summary: str = ""
     applied_at: datetime | None = None
     rejected_at: datetime | None = None
