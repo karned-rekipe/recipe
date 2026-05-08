@@ -31,6 +31,84 @@ async def test_create_suggestion_requires_existing_ingredient(logger):
         raise AssertionError("Expected missing ingredient to fail")
 
 
+async def test_create_suggestion_marks_ingredient_as_suggested(logger):
+    ingredient_repo = InMemoryIngredientRepository()
+    ingredient = await ingredient_repo.create(Ingredient(name="Tomate"))
+    suggestion_repo = InMemoryIngredientEnrichmentSuggestionRepository()
+    service = IngredientEnrichmentSuggestionService(suggestion_repo, ingredient_repo, logger)
+
+    await service.create(
+        IngredientEnrichmentSuggestion(
+            ingredient_uuid=ingredient.uuid,
+            run_uuid="01951234-5678-7abc-def0-000000000002",
+            proposed_patch={
+                "enrichment_profile": {
+                    "completeness_score": 75,
+                    "status": "suggested",
+                    "missing_fields": ["nutrition_profile"],
+                    "last_run_uuid": "01951234-5678-7abc-def0-000000000002",
+                    "last_enriched_at": "2026-05-08T10:00:00+00:00",
+                },
+            },
+        )
+    )
+
+    updated = await ingredient_repo.read(ingredient.uuid)
+
+    assert updated is not None
+    assert updated.enrichment_profile.status == "suggested"
+    assert updated.enrichment_profile.completeness_score == 75
+    assert updated.enrichment_profile.missing_fields == ["nutrition_profile"]
+    assert str(updated.enrichment_profile.last_run_uuid) == "01951234-5678-7abc-def0-000000000002"
+
+
+async def test_create_suggestion_reuses_equivalent_pending_suggestion(logger):
+    ingredient_repo = InMemoryIngredientRepository()
+    ingredient = await ingredient_repo.create(Ingredient(name="Carotte"))
+    suggestion_repo = InMemoryIngredientEnrichmentSuggestionRepository()
+    service = IngredientEnrichmentSuggestionService(suggestion_repo, ingredient_repo, logger)
+    first = await service.create(
+        IngredientEnrichmentSuggestion(
+            ingredient_uuid=ingredient.uuid,
+            run_uuid="01951234-5678-7abc-def0-000000000002",
+            proposed_patch={
+                "nutrition_profile": {"nutri_score": "A", "kcal_per_100g": 41},
+                "enrichment_profile": {
+                    "completeness_score": 90,
+                    "status": "suggested",
+                    "missing_fields": ["allergen_profile"],
+                    "last_run_uuid": "01951234-5678-7abc-def0-000000000002",
+                    "last_enriched_at": "2026-05-08T10:00:00+00:00",
+                },
+            },
+        )
+    )
+
+    second = await service.create(
+        IngredientEnrichmentSuggestion(
+            ingredient_uuid=ingredient.uuid,
+            run_uuid="01951234-5678-7abc-def0-000000000003",
+            proposed_patch={
+                "nutrition_profile": {"nutri_score": "A", "kcal_per_100g": 41},
+                "enrichment_profile": {
+                    "completeness_score": 90,
+                    "status": "suggested",
+                    "missing_fields": ["allergen_profile"],
+                    "last_run_uuid": "01951234-5678-7abc-def0-000000000003",
+                    "last_enriched_at": "2026-05-08T10:05:00+00:00",
+                },
+            },
+        )
+    )
+    suggestions = await suggestion_repo.find_by_ingredient_uuid(ingredient.uuid)
+    updated = await ingredient_repo.read(ingredient.uuid)
+
+    assert second.uuid == first.uuid
+    assert len(suggestions) == 1
+    assert updated is not None
+    assert str(updated.enrichment_profile.last_run_uuid) == "01951234-5678-7abc-def0-000000000003"
+
+
 async def test_apply_suggestion_updates_unvalidated_profile(logger):
     ingredient_repo = InMemoryIngredientRepository()
     ingredient = await ingredient_repo.create(Ingredient(name="Tomate"))

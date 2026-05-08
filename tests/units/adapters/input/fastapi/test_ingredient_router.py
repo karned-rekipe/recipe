@@ -313,6 +313,13 @@ async def test_enrichment_suggestion_http_lifecycle(client, created):
             "proposed_patch": {
                 "nutrition_profile": {"nutri_score": "A", "kcal_per_100g": 18},
                 "media_profile": {"main_image_uri": "media://tomate.png", "image_status": "uploaded"},
+                "enrichment_profile": {
+                    "completeness_score": 80,
+                    "status": "suggested",
+                    "missing_fields": ["media_profile"],
+                    "last_run_uuid": "01951234-5678-7abc-def0-000000000002",
+                    "last_enriched_at": "2026-05-08T10:00:00+00:00",
+                },
             },
             "field_confidences": {"nutrition_profile": 0.92},
             "field_sources": {"nutrition_profile": "ciqual"},
@@ -321,6 +328,7 @@ async def test_enrichment_suggestion_http_lifecycle(client, created):
     )
     suggestion_uuid = suggestion_response.json()["data"]["uuid"]
 
+    suggested_ingredient_response = await client.get(f"/v1/ingredients/{ingredient_uuid}")
     list_response = await client.get(f"/v1/ingredients/{ingredient_uuid}/enrichment-suggestions")
     apply_response = await client.post(
         f"/v1/ingredients/{ingredient_uuid}/enrichment-suggestions/{suggestion_uuid}/apply",
@@ -333,6 +341,7 @@ async def test_enrichment_suggestion_http_lifecycle(client, created):
     ingredient_response = await client.get(f"/v1/ingredients/{ingredient_uuid}")
 
     assert suggestion_response.status_code == 201
+    assert suggested_ingredient_response.json()["data"]["enrichment_profile"]["status"] == "suggested"
     assert list_response.status_code == 200
     assert list_response.json()["data"][0]["reasoning_summary"] == "Profil V5 stable."
     assert apply_response.status_code == 200

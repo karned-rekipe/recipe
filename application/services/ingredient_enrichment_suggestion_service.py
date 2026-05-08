@@ -1,8 +1,9 @@
+import json
 from datetime import UTC, datetime
 from typing import Any
 
 from arclith import BaseService, Logger
-from domain.models.ingredient import Ingredient
+from domain.models.ingredient import EnrichmentProfile, Ingredient
 from domain.models.ingredient_enrichment_suggestion import IngredientEnrichmentSuggestion
 from domain.ports.output.ingredient_enrichment_suggestion_repository import IngredientEnrichmentSuggestionRepository
 from domain.ports.output.ingredient_repository import IngredientRepository
@@ -34,7 +35,14 @@ class IngredientEnrichmentSuggestionService(BaseService[IngredientEnrichmentSugg
         ingredient = await self._ingredient_repo.read(entity.ingredient_uuid)
         if ingredient is None or ingredient.is_deleted:
             raise IngredientEnrichmentSuggestionError("Ingredient not found")
-        return await super().create(entity)
+        existing = await self._find_equivalent_pending_suggestion(entity)
+        if existing is not None:
+            await self._mark_ingredient_as_suggested(ingredient, entity.proposed_patch)
+            return existing
+
+        created = await super().create(entity)
+        await self._mark_ingredient_as_suggested(ingredient, created.proposed_patch)
+        return created
 
     async def find_by_ingredient_uuid(self, ingredient_uuid: UUID) -> list[IngredientEnrichmentSuggestion]:
         return await self._suggestion_repo.find_by_ingredient_uuid(ingredient_uuid)
@@ -188,3 +196,47 @@ class IngredientEnrichmentSuggestionService(BaseService[IngredientEnrichmentSugg
         if resolved:
             return "partially_applied"
         return "pending"
+
+    async def _find_equivalent_pending_suggestion(
+        self,
+        suggestion: IngredientEnrichmentSuggestion,
+    ) -> IngredientEnrichmentSuggestion | None:
+        proposed_fingerprint = self._patch_fingerprint(suggestion.proposed_patch)
+        for existing in await self._suggestion_repo.find_pending_by_ingredient_uuid(suggestion.ingredient_uuid):
+            if self._patch_fingerprint(existing.proposed_patch) == proposed_fingerprint:
+                return existing
+        return None
+
+    async def _mark_ingredient_as_suggested(
+        self,
+        ingredient: Ingredient,
+        proposed_patch: dict[str, Any],
+    ) -> None:
+        enrichment_profile = proposed_patch.get("enrichment_profile")
+        if not isinstance(enrichment_profile, dict):
+            return
+
+        profile_payload = ingredient.enrichment_profile.model_dump(mode="python")
+        profile_payload.update(enrichment_profile)
+        updated_ingredient = ingredient.model_copy(
+            update={
+                "enrichment_profile": EnrichmentProfile.model_validate(profile_payload),
+            }
+        )
+        await self._ingredient_repo.update(updated_ingredient)
+
+    @classmethod
+    def _patch_fingerprint(cls, patch: dict[str, Any]) -> str:
+        normalized = cls._normalize_patch_for_idempotency(patch)
+        return json.dumps(normalized, default=str, sort_keys=True, separators=(",", ":"))
+
+    @staticmethod
+    def _normalize_patch_for_idempotency(patch: dict[str, Any]) -> dict[str, Any]:
+        normalized = dict(patch)
+        enrichment_profile = normalized.get("enrichment_profile")
+        if isinstance(enrichment_profile, dict):
+            normalized_profile = dict(enrichment_profile)
+            normalized_profile.pop("last_run_uuid", None)
+            normalized_profile.pop("last_enriched_at", None)
+            normalized["enrichment_profile"] = normalized_profile
+        return normalized
