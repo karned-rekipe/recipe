@@ -109,6 +109,14 @@ async def test_create_returns_201(client):
     assert response.status_code == 201
 
 
+async def test_require_auth_can_be_disabled_for_local_dev(monkeypatch):
+    monkeypatch.setenv("REKIPE_AUTH_DISABLED", "true")
+
+    claims = await require_auth(None)
+
+    assert claims["sub"] == "local-dev"
+
+
 async def test_create_returns_uuid(client):
     response = await client.post("/v1/recipes/", json=_complete_payload())
     data = response.json()

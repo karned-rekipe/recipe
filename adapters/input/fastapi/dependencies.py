@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import cache
+import os
 from pathlib import Path
 from typing import Annotated, Callable
 
@@ -12,6 +13,11 @@ from arclith.infrastructure.config import load_config_dir
 
 _CONFIG_PATH = Path(__file__).parent.parent.parent.parent / "config"
 _http_bearer = HTTPBearer(auto_error=False)
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+
+
+def _is_auth_disabled() -> bool:
+    return os.getenv("REKIPE_AUTH_DISABLED", "").strip().lower() in _TRUE_VALUES
 
 
 @cache
@@ -47,4 +53,6 @@ def _get_require_auth_fn() -> Callable:
 async def require_auth(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_http_bearer)],
 ) -> dict:
+    if _is_auth_disabled():
+        return {"sub": "local-dev", "auth_disabled": True}
     return await _get_require_auth_fn()(credentials)
