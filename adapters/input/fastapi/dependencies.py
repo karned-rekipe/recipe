@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import cache
+import os
 from pathlib import Path
 from typing import Annotated, Callable
 
@@ -51,14 +52,44 @@ async def _inject_from_tenant_header(request: Request) -> bool:
     if not tenant_id:
         return False
 
+    await _inject_from_tenant_id(tenant_id)
+    return True
+
+
+def _is_auth_disabled() -> bool:
+    return os.getenv("REKIPE_AUTH_DISABLED", "").lower() in {"1", "true", "yes", "on"}
+
+
+def _get_local_tenant_id() -> str | None:
+    tenant_id = os.getenv("REKIPE_TENANT_URI")
+    if _is_auth_disabled() and tenant_id:
+        return tenant_id
+    return None
+
+
+async def _inject_from_tenant_id(tenant_id: str) -> None:
     from arclith.adapters.context import set_tenant_context
 
     set_tenant_context(await _get_header_tenant_resolver().resolve(tenant_id))
+
+
+async def _inject_from_local_tenant() -> bool:
+    config = _get_config()
+    if not config.adapters.multitenant:
+        return False
+
+    tenant_id = _get_local_tenant_id()
+    if not tenant_id:
+        return False
+
+    await _inject_from_tenant_id(tenant_id)
     return True
 
 
 async def inject_tenant_uri(request: Request) -> None:
     if await _inject_from_tenant_header(request):
+        return
+    if await _inject_from_local_tenant():
         return
     await _get_inject_fn()(request)
 

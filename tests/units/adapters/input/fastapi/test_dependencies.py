@@ -4,19 +4,44 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import Request
-from fastapi.security import HTTPAuthorizationCredentials
 
 
 async def test_inject_tenant_uri_without_auth():
     """Test inject_tenant_uri when no authentication is configured."""
     request = MagicMock(spec=Request)
     request.headers = {}
+    cfg = MagicMock()
+    cfg.adapters.multitenant = False
     
     # Import here to avoid config loading issues
     from adapters.input.fastapi.dependencies import inject_tenant_uri
     
-    # Should not raise
-    await inject_tenant_uri(request)
+    with patch("adapters.input.fastapi.dependencies._get_config", return_value=cfg):
+        await inject_tenant_uri(request)
+
+
+async def test_inject_tenant_uri_uses_local_tenant_when_auth_disabled(monkeypatch):
+    monkeypatch.setenv("REKIPE_AUTH_DISABLED", "true")
+    monkeypatch.setenv("REKIPE_TENANT_URI", "foyer-demo")
+    request = MagicMock(spec=Request)
+    request.headers = {}
+    cfg = MagicMock()
+    cfg.adapters.multitenant = True
+    resolver = MagicMock()
+    tenant_context = MagicMock()
+    resolver.resolve = AsyncMock(return_value=tenant_context)
+
+    from adapters.input.fastapi.dependencies import inject_tenant_uri
+
+    with (
+        patch("adapters.input.fastapi.dependencies._get_config", return_value=cfg),
+        patch("adapters.input.fastapi.dependencies._get_header_tenant_resolver", return_value=resolver),
+        patch("arclith.adapters.context.set_tenant_context") as set_tenant_context,
+    ):
+        await inject_tenant_uri(request)
+
+    resolver.resolve.assert_awaited_once_with("foyer-demo")
+    set_tenant_context.assert_called_once_with(tenant_context)
 
 
 async def test_inject_tenant_uri_is_cached():
@@ -32,29 +57,28 @@ async def test_inject_tenant_uri_is_cached():
 
 def test_require_auth_fn_is_cached():
     """Test that require_auth function is cached."""
+    mock_keycloak = MagicMock()
+    mock_keycloak.url = "http://keycloak:8080"
+    mock_keycloak.realm = "test"
+    mock_keycloak.audience = "test-api"
+
+    mock_cache_config = MagicMock()
+    mock_cache_config.jwks_ttl = 3600
+
+    mock_cfg = MagicMock()
+    mock_cfg.keycloak = mock_keycloak
+    mock_cfg.cache = mock_cache_config
+    mock_cfg.license = None
+
     # Mock the keycloak config to avoid RuntimeError
-    with patch("adapters.input.fastapi.dependencies.load_config_dir") as mock_config:
-        mock_keycloak = MagicMock()
-        mock_keycloak.url = "http://keycloak:8080"
-        mock_keycloak.realm = "test"
-        mock_keycloak.audience = "test-api"
-        
-        mock_cache_config = MagicMock()
-        mock_cache_config.jwks_ttl = 3600
-        
-        mock_cfg = MagicMock()
-        mock_cfg.keycloak = mock_keycloak
-        mock_cfg.cache = mock_cache_config
-        mock_cfg.license = None
-        mock_config.return_value = mock_cfg
-        
+    with patch("adapters.input.fastapi.dependencies._get_config", return_value=mock_cfg):
         # Clear cache first
         from adapters.input.fastapi.dependencies import _get_require_auth_fn
         _get_require_auth_fn.cache_clear()
-        
+
         fn1 = _get_require_auth_fn()
         fn2 = _get_require_auth_fn()
-        
+
         # Should return the same instance
         assert fn1 is fn2
 
@@ -83,16 +107,13 @@ async def test_require_auth_without_credentials():
 
 def test_require_auth_raises_without_keycloak_config():
     """Test that _get_require_auth_fn raises when keycloak is not configured."""
-    with patch("adapters.input.fastapi.dependencies.load_config_dir") as mock_config:
-        mock_cfg = MagicMock()
-        mock_cfg.keycloak = None
-        mock_config.return_value = mock_cfg
-        
+    mock_cfg = MagicMock()
+    mock_cfg.keycloak = None
+
+    with patch("adapters.input.fastapi.dependencies._get_config", return_value=mock_cfg):
         # Clear cache
         from adapters.input.fastapi.dependencies import _get_require_auth_fn
         _get_require_auth_fn.cache_clear()
-        
+
         with pytest.raises(RuntimeError, match="config.keycloak requis"):
             _get_require_auth_fn()
-
-
