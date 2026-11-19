@@ -1,6 +1,8 @@
 from pydantic import ConfigDict, Field
+from uuid import UUID as StdUUID
 
 from arclith.adapters.input.schemas.base_schema import BaseSchema
+from domain.models.recipe_line_origin import RecipeLineOrigin
 
 
 class StepSchema(BaseSchema):
@@ -38,4 +40,7 @@ class StepSchema(BaseSchema):
     main_image: str | None = None
     secondary_images: list[str] = []
     rank: int = Field(..., ge=1)
+    component_uuid: StdUUID | None = None
+    source_recipe_uuid: StdUUID | None = None
+    line_origin: RecipeLineOrigin = RecipeLineOrigin.manual
     total_time: int

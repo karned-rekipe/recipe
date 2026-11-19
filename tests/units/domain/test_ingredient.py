@@ -1,11 +1,24 @@
+import json
+from pathlib import Path
+
 import pytest
 
 from domain.models.ingredient import Ingredient
+
+GROUP_UUID = "01951234-5678-7abc-def0-000000000201"
+RAYON_UUID = "01951234-5678-7abc-def0-000000000202"
+SUPPLIER_UUID = "01951234-5678-7abc-def0-000000000203"
+SECONDARY_SUPPLIER_UUID = "01951234-5678-7abc-def0-000000000204"
 
 
 def make_ingredient(**kwargs) -> Ingredient:
     kwargs.setdefault("name", "Tomate")
     return Ingredient(**kwargs)
+
+
+def load_v5_fixture() -> dict:
+    fixture_path = Path(__file__).parents[2] / "fixtures" / "v5_ingredient_profiles.json"
+    return json.loads(fixture_path.read_text(encoding="utf-8"))
 
 
 # --- name validation ---
@@ -66,8 +79,10 @@ def test_season_months_score_zero_raises():
 
 def test_optional_fields_default_none():
     ingredient = make_ingredient()
-    assert ingredient.rayon is None
-    assert ingredient.group is None
+    assert ingredient.rayon_uuid is None
+    assert ingredient.group_uuid is None
+    assert ingredient.main_supplier_uuid is None
+    assert ingredient.secondary_supplier_uuids == []
     assert ingredient.green_score is None
     assert ingredient.unit is None
     assert ingredient.quantity is None
@@ -75,15 +90,19 @@ def test_optional_fields_default_none():
 
 def test_all_fields():
     ingredient = make_ingredient(
-        rayon="fruits et légumes",
-        group="légumes",
+        rayon_uuid=RAYON_UUID,
+        group_uuid=GROUP_UUID,
+        main_supplier_uuid=SUPPLIER_UUID,
+        secondary_supplier_uuids=[SECONDARY_SUPPLIER_UUID],
         green_score=80,
         unit="g",
         quantity=100.0,
         season_months={7: 3, 8: 3},
     )
-    assert ingredient.rayon == "fruits et légumes"
-    assert ingredient.group == "légumes"
+    assert str(ingredient.rayon_uuid) == RAYON_UUID
+    assert str(ingredient.group_uuid) == GROUP_UUID
+    assert str(ingredient.main_supplier_uuid) == SUPPLIER_UUID
+    assert [str(uuid) for uuid in ingredient.secondary_supplier_uuids] == [SECONDARY_SUPPLIER_UUID]
     assert ingredient.green_score == 80
     assert ingredient.unit == "g"
     assert ingredient.quantity == 100.0
@@ -93,6 +112,20 @@ def test_all_fields():
 def test_entity_has_uuid():
     ingredient = make_ingredient()
     assert ingredient.uuid is not None
+
+
+def test_v5_fixture_profiles_are_valid():
+    fixture = load_v5_fixture()
+
+    ingredient = Ingredient.model_validate(fixture["tomate_enriched"])
+
+    assert ingredient.media_profile.image_status == "generated"
+    assert ingredient.seasonality_profile.months == {6: 2, 7: 3, 8: 3, 9: 2}
+    assert ingredient.nutrition_profile.source == "ciqual"
+    assert ingredient.sustainability_profile.source == "agribalyse"
+    assert ingredient.unit_profile.conversions[0].factor == 1000
+    assert ingredient.package_profiles[0].package_unit == "barquette"
+    assert ingredient.enrichment_profile.status == "suggested"
 
 
 def test_entity_has_version():

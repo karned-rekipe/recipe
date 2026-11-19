@@ -32,19 +32,15 @@ async def test_register_and_purge_all_multiple_entities(registry):
     async def purge_recipes() -> int:
         return 3
 
-    async def purge_recipes() -> int:
-        return 7
-
     async def purge_users() -> int:
         return 0
 
-    registry.register("recipes", purge_recipes)
     registry.register("recipes", purge_recipes)
     registry.register("users", purge_users)
 
     results = await registry.purge_all()
 
-    assert results == {"recipes": 3, "recipes": 7, "users": 0}
+    assert results == {"recipes": 3, "users": 0}
 
 
 async def test_purge_all_empty_registry(registry):
@@ -95,4 +91,3 @@ async def test_register_overwrites_existing(registry):
 
     results = await registry.purge_all()
     assert results == {"test": 2}
-

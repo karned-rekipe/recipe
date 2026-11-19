@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import cache
+import os
 from pathlib import Path
 from typing import Annotated, Callable
 
@@ -12,14 +13,85 @@ from arclith.infrastructure.config import load_config_dir
 
 _CONFIG_PATH = Path(__file__).parent.parent.parent.parent / "config"
 _http_bearer = HTTPBearer(auto_error=False)
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+
+
+def _is_auth_disabled() -> bool:
+    return os.getenv("REKIPE_AUTH_DISABLED", "").strip().lower() in _TRUE_VALUES
+
+
+@cache
+def _get_config():
+    return load_config_dir(_CONFIG_PATH)
 
 
 @cache
 def _get_inject_fn() -> Callable:
-    return make_inject_tenant_uri(load_config_dir(_CONFIG_PATH))
+    return make_inject_tenant_uri(_get_config())
+
+
+@cache
+def _get_header_tenant_resolver():
+    from arclith.adapters.output.memory.cache_adapter import MemoryCacheAdapter
+    from arclith.adapters.output.vault.tenant_adapter import VaultTenantResolver
+
+    config = _get_config()
+    if config.tenant is None:
+        raise RuntimeError("config.tenant requis en mode multitenant")
+    return VaultTenantResolver(
+        adapter_name="mongodb",
+        addr=config.tenant.vault_addr,
+        mount=config.tenant.vault_mount,
+        path_prefix=config.tenant.vault_path_prefix,
+        cache=MemoryCacheAdapter(),
+        ttl_s=config.cache.tenant_uri_ttl,
+    )
+
+
+async def _inject_from_tenant_header(request: Request) -> bool:
+    config = _get_config()
+    if not config.adapters.multitenant or not _is_auth_disabled():
+        return False
+
+    tenant_id = request.headers.get("X-Tenant-URI") or request.headers.get("x-tenant-uri")
+    if not tenant_id:
+        return False
+
+    await _inject_from_tenant_id(tenant_id)
+    return True
+
+
+def _get_local_tenant_id() -> str | None:
+    tenant_id = os.getenv("REKIPE_TENANT_URI")
+    if _is_auth_disabled() and tenant_id:
+        return tenant_id
+    return None
+
+
+async def _inject_from_tenant_id(tenant_id: str) -> None:
+    from arclith.adapters.context import set_tenant_context
+
+    set_tenant_context(await _get_header_tenant_resolver().resolve(tenant_id))
+
+
+async def _inject_from_local_tenant() -> bool:
+    config = _get_config()
+    if not config.adapters.multitenant:
+        return False
+
+    tenant_id = _get_local_tenant_id()
+    if not tenant_id:
+        return False
+
+    await _inject_from_tenant_id(tenant_id)
+    return True
 
 
 async def inject_tenant_uri(request: Request) -> None:
+    if await _inject_from_tenant_header(request):
+        return
+    if await _inject_from_local_tenant():
+        return
     await _get_inject_fn()(request)
 
 
@@ -30,7 +102,7 @@ def _get_require_auth_fn() -> Callable:
     from arclith.adapters.input.license.validator import RoleLicenseValidator
     from arclith.adapters.output.memory.cache_adapter import MemoryCacheAdapter
 
-    config = load_config_dir(_CONFIG_PATH)
+    config = _get_config()
     kc = config.keycloak
     if kc is None:
         raise RuntimeError("config.keycloak requis pour require_auth — ajouter la section dans config.yaml")
@@ -47,4 +119,6 @@ def _get_require_auth_fn() -> Callable:
 async def require_auth(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_http_bearer)],
 ) -> dict:
+    if _is_auth_disabled():
+        return {"sub": "local-dev", "auth_disabled": True}
     return await _get_require_auth_fn()(credentials)

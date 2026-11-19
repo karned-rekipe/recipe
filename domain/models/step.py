@@ -1,6 +1,8 @@
 from pydantic import Field, computed_field
 
 from arclith.domain.models.entity import Entity
+from domain.models.recipe_line_origin import RecipeLineOrigin
+from uuid6 import UUID
 
 
 class Step(Entity):
@@ -12,6 +14,18 @@ class Step(Entity):
     secondary_images: list[str] = Field(default_factory=list, examples=[["https://example.com/step1b.jpg"]])
     main_image: str | None = Field(None, examples=["https://example.com/step1.jpg"])
     rank: int = Field(..., description="Order of the step in the recipe.", ge=1, examples=[1, 2, 3])
+    component_uuid: UUID | None = Field(
+        None,
+        description="Parent embedded component UUID when this step is projected from a sub-recipe.",
+    )
+    source_recipe_uuid: UUID | None = Field(
+        None,
+        description="Child recipe UUID when this step is projected from a sub-recipe.",
+    )
+    line_origin: RecipeLineOrigin = Field(
+        RecipeLineOrigin.manual,
+        description="Whether the step is manually owned by the recipe or projected from a component.",
+    )
 
     @computed_field  # type: ignore[prop-decorator]
     @property

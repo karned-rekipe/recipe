@@ -9,7 +9,9 @@ from arclith.domain.ports.logger import Logger
 from arclith.domain.ports.repository import Repository
 from arclith.infrastructure.config import AppConfig
 from domain.models.ingredient import Ingredient
+from domain.ports.output.ingredient_group_repository import IngredientGroupRepository
 from domain.ports.output.ingredient_repository import IngredientRepository
+from domain.ports.output.ingredient_rayon_repository import IngredientRayonRepository
 
 
 def _build_memory(cfg: AppConfig, log: Logger) -> Repository[Ingredient]:
@@ -45,7 +47,17 @@ _registry = cast(
 )
 
 
-def build_ingredient_service(arclith: Arclith) -> tuple[IngredientService, Logger]:
+def build_ingredient_service(
+    arclith: Arclith,
+    group_repository: IngredientGroupRepository | None = None,
+    rayon_repository: IngredientRayonRepository | None = None,
+) -> tuple[IngredientService, Logger]:
     arclith.logger.info("🗄️ Ingredient repository adapter selected", adapter=arclith.config.adapters.repository)
     repo: IngredientRepository = cast(IngredientRepository, _registry.build(arclith.config, arclith.logger))
-    return IngredientService(repo, arclith.logger, arclith.config.soft_delete.retention_days), arclith.logger
+    return IngredientService(
+        repo,
+        arclith.logger,
+        arclith.config.soft_delete.retention_days,
+        group_repository=group_repository,
+        rayon_repository=rayon_repository,
+    ), arclith.logger
