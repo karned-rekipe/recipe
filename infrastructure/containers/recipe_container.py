@@ -9,7 +9,12 @@ from arclith.domain.ports.logger import Logger
 from arclith.domain.ports.repository import Repository
 from arclith.infrastructure.config import AppConfig
 from domain.models.recipe import Recipe
+from domain.ports.output.equipment_repository import EquipmentRepository
+from domain.ports.output.ingredient_group_repository import IngredientGroupRepository
+from domain.ports.output.ingredient_repository import IngredientRepository
+from domain.ports.output.ingredient_rayon_repository import IngredientRayonRepository
 from domain.ports.output.recipe_repository import RecipeRepository
+from domain.ports.output.tag_repository import TagRepository
 
 
 def _build_memory(cfg: AppConfig, log: Logger) -> Repository[Recipe]:
@@ -45,7 +50,23 @@ _registry = cast(
 )
 
 
-def build_recipe_service(arclith: Arclith) -> tuple[RecipeService, Logger]:
+def build_recipe_service(
+    arclith: Arclith,
+    ingredient_repository: IngredientRepository | None = None,
+    equipment_repository: EquipmentRepository | None = None,
+    tag_repository: TagRepository | None = None,
+    group_repository: IngredientGroupRepository | None = None,
+    rayon_repository: IngredientRayonRepository | None = None,
+) -> tuple[RecipeService, Logger]:
     arclith.logger.info("🗄️ Repository adapter selected", adapter=arclith.config.adapters.repository)
     repo: RecipeRepository = cast(RecipeRepository, _registry.build(arclith.config, arclith.logger))
-    return RecipeService(repo, arclith.logger, arclith.config.soft_delete.retention_days), arclith.logger
+    return RecipeService(
+        repo,
+        arclith.logger,
+        arclith.config.soft_delete.retention_days,
+        ingredient_repository=ingredient_repository,
+        equipment_repository=equipment_repository,
+        tag_repository=tag_repository,
+        group_repository=group_repository,
+        rayon_repository=rayon_repository,
+    ), arclith.logger

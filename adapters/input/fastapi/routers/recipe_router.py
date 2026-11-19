@@ -11,8 +11,17 @@ from adapters.input.schemas.recipe_schema import (
     RecipePatchSchema,
     RecipeSchema,
     RecipeUpdateSchema,
+    recipe_create_payload_to_domain,
+    recipe_patch_payload_to_domain,
+    recipe_update_payload_to_domain,
 )
-from application.services.recipe_service import RecipeService
+from domain.models.recipe import RecipeStatus
+from application.services.recipe_service import (
+    RecipeComponentCycleError,
+    RecipeComponentInUseError,
+    RecipeReferenceError,
+    RecipeService,
+)
 from arclith.adapters.input.fastapi.dependencies import get_duration_ms
 from arclith.adapters.input.schemas.response_wrapper import (
     ApiResponse,
@@ -22,8 +31,6 @@ from arclith.adapters.input.schemas.response_wrapper import (
     success_response,
 )
 from arclith.domain.ports.logger import Logger
-from domain.models.recipe import Recipe
-
 
 class RecipeRouter:
     def __init__(self, service: RecipeService, logger: Logger) -> None:
@@ -38,7 +45,7 @@ class RecipeRouter:
             path="/",
             endpoint=self.create_recipe,
             summary="Create recipe",
-            response_model = ApiResponse[RecipeCreatedSchema],
+            response_model=None,
             status_code=201,
             responses = {
                 400: {"description": "Invalid payload"},
@@ -104,7 +111,7 @@ class RecipeRouter:
             path="/{uuid}/duplicate",
             endpoint=self.duplicate_recipe,
             summary="Duplicate recipe",
-            response_model = ApiResponse[RecipeCreatedSchema],
+            response_model=None,
             status_code=201,
             responses = {
                 404: {"description": "Recipe not found"},
@@ -123,7 +130,7 @@ class RecipeRouter:
         duration_ms: Annotated[float, Depends(get_duration_ms)],
             prefer: Annotated[str | None, Header()] = None,
     ) -> ApiResponse[RecipeCreatedSchema] | ApiResponse[RecipeSchema]:
-        """Create a new reusable recipe.
+        """Create a new complete recipe aggregate.
 
         **SOTA REST Features:**
         - Returns 201 Created with UUID only (minimal response)
@@ -138,15 +145,18 @@ class RecipeRouter:
         curl -X POST /v1/recipes \\
           -H "Content-Type: application/json" \\
           -H "Idempotency-Key: $(uuidgen)" \\
-          -d '{"name": "Farine de blé"}'
+          -d '{"name": "Houmous", "servings": 4, "ingredients": [...], "steps": [...]}'
         
         # Full representation
         curl -X POST /v1/recipes \\
           -H "Prefer: return=representation" \\
-          -d '{"name": "Farine de blé"}'
+          -d '{"name": "Houmous", "servings": 4, "ingredients": [...], "steps": [...]}'
         ```
         """
-        result = await self._service.create(Recipe(name=payload.name))
+        try:
+            result = await self._service.create(recipe_create_payload_to_domain(payload))
+        except (RecipeComponentCycleError, RecipeReferenceError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
         # RFC 7231: Location header on 201 Created
         location = f"{request.url.path.rstrip('/')}/{result.uuid}"
@@ -156,10 +166,11 @@ class RecipeRouter:
         response.headers["Link"] = f'<{location}>; rel="self", <{location}/duplicate>; rel="duplicate"'
 
         # RFC 7240: Prefer header support
-        if prefer and "return=representation" in prefer.lower():
+        prefer_header = request.headers.get("prefer", prefer or "")
+        if "return=representation" in prefer_header.lower():
             # Client wants full object
             return success_response(
-                RecipeSchema.model_validate(result, from_attributes = True),
+                RecipeSchema.model_validate(await self._service.hydrate_recipe(result)),
                 metadata = ResponseMetadata(duration_ms = int(duration_ms)),
             )
 
@@ -176,7 +187,7 @@ class RecipeRouter:
             request: Request,
         duration_ms: Annotated[float, Depends(get_duration_ms)],
     ) -> ApiResponse[RecipeSchema]:
-        """Get an recipe by its UUID.
+        """Get a recipe aggregate by its UUID.
 
         **SOTA REST Features:**
         - ETag header based on entity version (for caching/concurrency)
@@ -209,7 +220,7 @@ class RecipeRouter:
             "Link"] = f'<{base}>; rel="self", <{base}/duplicate>; rel="duplicate", </v1/recipes>; rel="collection"'
         
         return success_response(
-            RecipeSchema.model_validate(result, from_attributes=True),
+            RecipeSchema.model_validate(await self._service.hydrate_recipe(result)),
             metadata=ResponseMetadata(duration_ms=int(duration_ms)),
         )
 
@@ -221,7 +232,7 @@ class RecipeRouter:
             request: Request,
             if_match: Annotated[str | None, Header()] = None,
     ) -> None:
-        """Replace name of an existing recipe (PUT semantics).
+        """Replace an existing recipe aggregate (PUT semantics).
 
         **SOTA REST Features:**
         - Requires If-Match header for optimistic locking
@@ -239,11 +250,10 @@ class RecipeRouter:
         # Update with version check
         curl -X PUT /v1/recipes/01234... \\
           -H 'If-Match: "v1"' \\
-          -d '{"name": "Nouvelle farine"}'
+          -d '{"name": "Nouvelle recette", "servings": 4, "ingredients": [...], "steps": [...]}'
         ```
 
-        The field is fully overwritten.
-        Note: changes do not propagate to recipes where this recipe is already linked (snapshot model).
+        The aggregate is fully overwritten.
         """
         existing = await self._service.read(self._to_uuid6(uuid))
         if existing is None:
@@ -265,7 +275,10 @@ class RecipeRouter:
                     detail = f"Version mismatch: expected v{expected_version}, current v{existing.version}",
                 )
 
-        updated = await self._service.update(Recipe(uuid = self._to_uuid6(uuid), name = payload.name))
+        try:
+            updated = await self._service.update(recipe_update_payload_to_domain(existing, payload))
+        except (RecipeComponentCycleError, RecipeReferenceError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
         # RFC 7231: Content-Location header
         response.headers["Content-Location"] = f"/v1/recipes/{uuid}"
@@ -281,7 +294,7 @@ class RecipeRouter:
             request: Request,
             if_match: Annotated[str | None, Header()] = None,
     ) -> None:
-        """Partially update an recipe (PATCH semantics).
+        """Partially update a recipe aggregate (PATCH semantics).
 
         **SOTA REST Features:**
         - Requires If-Match header for optimistic locking
@@ -290,7 +303,7 @@ class RecipeRouter:
         - Content-Location header points to updated resource
 
         Only the fields provided in the body are updated; omitted fields keep their current value.
-        Note: changes do not propagate to recipes where this recipe is already linked (snapshot model).
+        Provided collections replace the full corresponding section.
         """
         existing = await self._service.read(self._to_uuid6(uuid))
         if existing is None:
@@ -312,12 +325,10 @@ class RecipeRouter:
                     detail = f"Version mismatch: expected v{expected_version}, current v{existing.version}",
                 )
 
-        updated = await self._service.update(
-            Recipe(
-                uuid = existing.uuid,
-                name = payload.name if payload.name is not None else existing.name,
-            )
-        )
+        try:
+            updated = await self._service.update(recipe_patch_payload_to_domain(existing, payload))
+        except (RecipeComponentCycleError, RecipeReferenceError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
         # RFC 7231: Content-Location header
         response.headers["Content-Location"] = f"/v1/recipes/{uuid}"
@@ -336,7 +347,10 @@ class RecipeRouter:
         It is retained until the purge retention period expires.
         Use `DELETE /admin/purge` to permanently remove all expired entities.
         """
-        await self._service.delete(self._to_uuid6(uuid))
+        try:
+            await self._service.delete(self._to_uuid6(uuid))
+        except RecipeComponentInUseError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     async def list_recipes(
         self,
@@ -345,8 +359,18 @@ class RecipeRouter:
         page: int = Query(1, ge=1, description="Page number (1-indexed)"),
         per_page: int = Query(20, ge=1, le=100, description="Items per page"),
         name: str | None = Query(None, min_length=1, description="Filter by name (partial, case-insensitive)"),
+        ingredient_uuid: StdUUID | None = Query(None, description="Filter recipes using an ingredient UUID"),
+        equipment_uuid: StdUUID | None = Query(None, description="Filter recipes using an equipment UUID"),
+        tag_uuid: StdUUID | None = Query(None, description="Filter recipes using a tag UUID"),
+        difficulty: int | None = Query(None, ge=1, le=5, description="Filter by difficulty level"),
+        origin_country: str | None = Query(None, min_length=2, max_length=2, description="Filter by origin country code"),
+        price: int | None = Query(None, ge=1, le=5, description="Filter by price level"),
+        favorite: bool | None = Query(None, description="Filter favorite recipes"),
+        season_month: int | None = Query(None, ge=1, le=12, description="Filter by computed seasonal month"),
+        status: RecipeStatus | None = Query(None, description="Filter by lifecycle status"),
+        meal_planner_eligible: bool | None = Query(None, description="Return only active recipes selectable by the meal planner"),
     ) -> PaginatedResponse[RecipeSchema]:
-        """List all active (non-deleted) recipes.
+        """List all active (non-deleted) recipe aggregates.
 
         **SOTA REST Features:**
         - X-Total-Count header for total items (useful for pagination UI)
@@ -354,17 +378,33 @@ class RecipeRouter:
         - Always returns 200 OK, even if empty list
 
         Pass `name` for a partial, case-insensitive name filter.
-        Each item: uuid, name, unit, created_at, updated_at, version.
-        Use the returned UUIDs with `POST /v1/recipes/{uuid}/recipes/{recipe_uuid}` to link them to a recipe.
+        Each item returns the recipe aggregate payload.
         """
         offset = (page - 1) * per_page
-        items, total = await self._service.find_page_filtered(name=name, offset=offset, limit=per_page)
+        try:
+            items, total = await self._service.find_page_filtered_hydrated(
+                name=name,
+                ingredient_uuid=self._to_uuid6(ingredient_uuid) if ingredient_uuid is not None else None,
+                equipment_uuid=self._to_uuid6(equipment_uuid) if equipment_uuid is not None else None,
+                tag_uuid=self._to_uuid6(tag_uuid) if tag_uuid is not None else None,
+                difficulty=difficulty,
+                origin_country=origin_country.upper() if origin_country is not None else None,
+                price=price,
+                favorite=favorite,
+                season_month=season_month,
+                status=status,
+                meal_planner_eligible=meal_planner_eligible,
+                offset=offset,
+                limit=per_page,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
         # X-Total-Count header (common practice for pagination)
         response.headers["X-Total-Count"] = str(total)
 
         return paginated_response(
-            data=[RecipeSchema.model_validate(i, from_attributes=True) for i in items],
+            data=[RecipeSchema.model_validate(i) for i in items],
             total=total,
             page=page,
             per_page=per_page,
@@ -379,14 +419,14 @@ class RecipeRouter:
         duration_ms: Annotated[float, Depends(get_duration_ms)],
             prefer: Annotated[str | None, Header()] = None,
     ) -> ApiResponse[RecipeCreatedSchema] | ApiResponse[RecipeSchema]:
-        """Duplicate an recipe, assigning it a new UUID.
+        """Duplicate a recipe aggregate, assigning it a new UUID.
 
         **SOTA REST Features:**
         - Returns 201 Created with UUID only (minimal response)
         - Location header points to the duplicated resource
         - Supports `Prefer: return=representation` to get full object
 
-        Creates an independent copy with the same name and unit.
+        Creates an independent copy with the same aggregate data.
         Returns the UUID of the new recipe.
         """
         result = await self._service.duplicate(self._to_uuid6(uuid))
@@ -399,9 +439,10 @@ class RecipeRouter:
         response.headers["Link"] = f'<{location}>; rel="self", </v1/recipes>; rel="collection"'
 
         # RFC 7240: Prefer header support
-        if prefer and "return=representation" in prefer.lower():
+        prefer_header = request.headers.get("prefer", prefer or "")
+        if "return=representation" in prefer_header.lower():
             return success_response(
-                RecipeSchema.model_validate(result, from_attributes = True),
+                RecipeSchema.model_validate(await self._service.hydrate_recipe(result)),
                 metadata = ResponseMetadata(duration_ms = int(duration_ms)),
             )
 
@@ -410,4 +451,3 @@ class RecipeRouter:
             RecipeCreatedSchema(uuid = result.uuid),
             metadata=ResponseMetadata(duration_ms=int(duration_ms)),
         )
-

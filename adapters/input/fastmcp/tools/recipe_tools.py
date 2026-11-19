@@ -1,14 +1,22 @@
+from typing import Annotated
+from uuid import UUID as StdUUID
+
 import fastmcp
 from pydantic import Field
 from uuid6 import UUID
 
 from adapters.input.fastmcp.dependencies import inject_tenant_uri, require_auth_mcp
-from adapters.input.schemas.recipe_schema import RecipeSchema
+from adapters.input.schemas.recipe_schema import (
+    RecipeCreateSchema,
+    RecipePatchSchema,
+    RecipeSchema,
+    RecipeUpdateSchema,
+    recipe_create_payload_to_domain,
+    recipe_patch_payload_to_domain,
+    recipe_update_payload_to_domain,
+)
 from application.services.recipe_service import RecipeService
 from arclith.domain.ports.logger import Logger
-from domain.models.recipe import Recipe
-from typing import Annotated
-from uuid import UUID as StdUUID
 
 
 class RecipeMCP:
@@ -29,109 +37,167 @@ class RecipeMCP:
 
         @self._mcp.tool
         async def create_recipe(
-                name: Annotated[str, Field(
-                    description = "Nom de l'ingrédient (ex. 'Farine de blé', 'Sel fin'). Sera normalisé (espaces rognés).",
-                    examples = ["Farine de blé", "Sel fin"])],
-                ctx: fastmcp.Context | None = None,
+            payload: Annotated[
+                dict,
+                Field(
+                    description="Complete recipe payload with servings, ingredients, equipment, steps, sources, and image URIs.",
+                    examples=[{
+                        "name": "Houmous maison",
+                        "servings": 4,
+                        "ingredients": [{
+                            "ingredient_uuid": "01951234-5678-7abc-def0-123456789abc",
+                            "quantity": 400,
+                            "unit": "g",
+                        }],
+                        "equipment": [{"equipment_uuid": "01951234-5678-7abc-def0-123456789abd"}],
+                        "steps": [{
+                            "name": "Mixer",
+                            "description": "Mixer tous les ingredients.",
+                            "rank": 1,
+                            "secondary_images": [],
+                        }],
+                    }],
+                ),
+            ],
+            ctx: fastmcp.Context | None = None,
         ) -> dict:
-            """Create a new reusable recipe.
+            """Create a complete recipe aggregate.
 
-            Returns the created recipe with its generated UUID.
-            Once created, use `link_recipe_to_recipe` to attach it to a recipe.
-            Fields returned: uuid, name, created_at, updated_at, version.
+            The payload is the same complete aggregate expected by the HTTP API.
+            Returns the created recipe aggregate.
             """
             await require_auth_mcp(ctx)
             await inject_tenant_uri(ctx)
-            result = await service.create(Recipe(name = name))
-            logger.info("✅ Recipe created via MCP", uuid = str(result.uuid), name = result.name)
-            return RecipeSchema.model_validate(result).model_dump()
+            validated = RecipeCreateSchema.model_validate(payload)
+            result = await service.create(recipe_create_payload_to_domain(validated))
+            logger.info("✅ Recipe created via MCP", uuid=str(result.uuid), name=result.name)
+            return RecipeSchema.model_validate(await service.hydrate_recipe(result)).model_dump(mode="json")
 
         @self._mcp.tool
         async def get_recipe(
-                uuid: Annotated[str, Field(description = "UUID (UUIDv7) de l'ingrédient à récupérer.",
-                                           examples = ["01951234-5678-7abc-def0-123456789abc"])],
-                ctx: fastmcp.Context | None = None,
+            uuid: Annotated[
+                str,
+                Field(
+                    description="UUID (UUIDv7) of the recipe to retrieve.",
+                    examples=["01951234-5678-7abc-def0-123456789abc"],
+                ),
+            ],
+            ctx: fastmcp.Context | None = None,
         ) -> dict | None:
-            """Get an recipe by its UUID.
-
-            Returns the full recipe object or null if not found.
-            Fields: uuid, name, created_at, updated_at, version.
-            """
+            """Get a recipe aggregate by its UUID."""
             await inject_tenant_uri(ctx)
             result = await service.read(to_uuid6(StdUUID(uuid)))
             if result is None:
-                logger.warning("⚠️ Recipe not found via MCP", uuid = uuid)
+                logger.warning("⚠️ Recipe not found via MCP", uuid=uuid)
                 return None
-            logger.info("✅ Recipe fetched via MCP", uuid = uuid, name = result.name)
-            return RecipeSchema.model_validate(result).model_dump()
+            logger.info("✅ Recipe fetched via MCP", uuid=uuid, name=result.name)
+            return RecipeSchema.model_validate(await service.hydrate_recipe(result)).model_dump(mode="json")
 
         @self._mcp.tool
         async def update_recipe(
-                uuid: Annotated[str, Field(description = "UUID (UUIDv7) de l'ingrédient à modifier.",
-                                           examples = ["01951234-5678-7abc-def0-123456789abc"])],
-                name: Annotated[str, Field(description = "Nouveau nom de l'ingrédient.",
-                                           examples = ["Farine complète", "Gros sel"])],
-                ctx: fastmcp.Context | None = None,
+            uuid: Annotated[
+                str,
+                Field(
+                    description="UUID (UUIDv7) of the recipe to replace.",
+                    examples=["01951234-5678-7abc-def0-123456789abc"],
+                ),
+            ],
+            payload: Annotated[
+                dict,
+                Field(
+                    description="Full replacement recipe payload. Omitted collections are replaced with their default values.",
+                ),
+            ],
+            ctx: fastmcp.Context | None = None,
         ) -> dict:
-            """Replace name of an existing recipe.
-
-            Full replacement (PUT semantics): name is overwritten.
-            Returns the updated recipe.
-            Note: updating an recipe does not propagate to recipes where it is already linked (snapshot model).
-            """
+            """Replace a recipe aggregate (PUT semantics)."""
             await inject_tenant_uri(ctx)
-            result = await service.update(Recipe(uuid = to_uuid6(StdUUID(uuid)), name = name))
-            logger.info("✅ Recipe updated via MCP", uuid = uuid, name = result.name)
-            return RecipeSchema.model_validate(result).model_dump()
+            existing = await service.read(to_uuid6(StdUUID(uuid)))
+            if existing is None:
+                logger.warning("⚠️ Recipe not found via MCP (PUT)", uuid=uuid)
+                raise KeyError(f"Recipe with uuid {uuid} not found")
+            validated = RecipeUpdateSchema.model_validate(payload)
+            result = await service.update(recipe_update_payload_to_domain(existing, validated))
+            logger.info("✅ Recipe updated via MCP", uuid=uuid, name=result.name)
+            return RecipeSchema.model_validate(await service.hydrate_recipe(result)).model_dump(mode="json")
+
+        @self._mcp.tool
+        async def patch_recipe(
+            uuid: Annotated[
+                str,
+                Field(
+                    description="UUID (UUIDv7) of the recipe to partially update.",
+                    examples=["01951234-5678-7abc-def0-123456789abc"],
+                ),
+            ],
+            payload: Annotated[
+                dict,
+                Field(
+                    description="Partial recipe payload. Provided collections replace the whole corresponding section.",
+                ),
+            ],
+            ctx: fastmcp.Context | None = None,
+        ) -> dict:
+            """Partially update a recipe aggregate (PATCH semantics)."""
+            await inject_tenant_uri(ctx)
+            existing = await service.read(to_uuid6(StdUUID(uuid)))
+            if existing is None:
+                logger.warning("⚠️ Recipe not found via MCP (PATCH)", uuid=uuid)
+                raise KeyError(f"Recipe with uuid {uuid} not found")
+            validated = RecipePatchSchema.model_validate(payload)
+            result = await service.update(recipe_patch_payload_to_domain(existing, validated))
+            logger.info("✅ Recipe patched via MCP", uuid=uuid, name=result.name)
+            return RecipeSchema.model_validate(await service.hydrate_recipe(result)).model_dump(mode="json")
 
         @self._mcp.tool
         async def delete_recipe(
-                uuid: Annotated[str, Field(description = "UUID (UUIDv7) de l'ingrédient à supprimer.",
-                                           examples = ["01951234-5678-7abc-def0-123456789abc"])],
-                ctx: fastmcp.Context | None = None,
+            uuid: Annotated[
+                str,
+                Field(
+                    description="UUID (UUIDv7) of the recipe to delete.",
+                    examples=["01951234-5678-7abc-def0-123456789abc"],
+                ),
+            ],
+            ctx: fastmcp.Context | None = None,
         ) -> None:
-            """Soft-delete an recipe.
-
-            The recipe is marked as deleted and excluded from list results.
-            It is retained until the purge retention period expires.
-            Use `purge_recipes` to permanently remove expired entries.
-            """
+            """Soft-delete a recipe aggregate."""
             await require_auth_mcp(ctx)
             await inject_tenant_uri(ctx)
             await service.delete(to_uuid6(StdUUID(uuid)))
-            logger.info("✅ Recipe deleted via MCP", uuid = uuid)
+            logger.info("✅ Recipe deleted via MCP", uuid=uuid)
 
         @self._mcp.tool
         async def list_recipes(
-                name: Annotated[str | None, Field(default = None,
-                                                  description = "Filtre optionnel : recherche partielle sur le nom, insensible à la casse. Ex: 'far' retournera 'Farine de blé'.",
-                                                  examples = ["farine", None])] = None,
-                ctx: fastmcp.Context | None = None,
+            name: Annotated[
+                str | None,
+                Field(
+                    default=None,
+                    description="Optional partial name filter, case-insensitive.",
+                    examples=["houmous", None],
+                ),
+            ] = None,
+            ctx: fastmcp.Context | None = None,
         ) -> list[dict]:
-            """List all active (non-deleted) recipes.
-
-            Pass `name` for a partial, case-insensitive name filter.
-            Each item: uuid, name, created_at, updated_at, version.
-            Use these UUIDs with `link_recipe_to_recipe` to attach recipes to a recipe.
-            """
+            """List all active recipe aggregates."""
             await inject_tenant_uri(ctx)
             items = await service.find_by_name(name) if name else await service.find_all()
-            logger.info("✅ Recipes listed via MCP", count = len(items), filter = name)
-            return [RecipeSchema.model_validate(i).model_dump() for i in items]
+            hydrated = await service.hydrate_recipes(items)
+            logger.info("✅ Recipes listed via MCP", count=len(items), filter=name)
+            return [RecipeSchema.model_validate(i).model_dump(mode="json") for i in hydrated]
 
         @self._mcp.tool
         async def duplicate_recipe(
-                uuid: Annotated[str, Field(description = "UUID (UUIDv7) de l'ingrédient à dupliquer.",
-                                           examples = ["01951234-5678-7abc-def0-123456789abc"])],
-                ctx: fastmcp.Context | None = None,
+            uuid: Annotated[
+                str,
+                Field(
+                    description="UUID (UUIDv7) of the recipe to duplicate.",
+                    examples=["01951234-5678-7abc-def0-123456789abc"],
+                ),
+            ],
+            ctx: fastmcp.Context | None = None,
         ) -> dict:
-            """Duplicate an recipe, assigning it a new UUID.
-
-            Creates an independent copy with the same name.
-            Returns the new recipe with its own UUID.
-            """
+            """Duplicate a recipe aggregate, assigning it a new UUID."""
             await inject_tenant_uri(ctx)
             result = await service.duplicate(to_uuid6(StdUUID(uuid)))
-            logger.info("✅ Recipe duplicated via MCP", source_uuid = uuid, new_uuid = str(result.uuid))
-            return RecipeSchema.model_validate(result).model_dump()
-
+            logger.info("✅ Recipe duplicated via MCP", source_uuid=uuid, new_uuid=str(result.uuid))
+            return RecipeSchema.model_validate(await service.hydrate_recipe(result)).model_dump(mode="json")

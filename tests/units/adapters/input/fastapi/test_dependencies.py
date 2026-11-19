@@ -1,7 +1,9 @@
 """Tests for adapters/input/fastapi/dependencies.py."""
 
-import pytest
+import inspect
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from fastapi import Request
 
@@ -98,7 +100,6 @@ async def test_require_auth_without_credentials():
     # This test validates function signature
     # Full integration testing is done elsewhere
     from adapters.input.fastapi.dependencies import require_auth
-    import inspect
     
     # Should accept credentials parameter
     sig = inspect.signature(require_auth)

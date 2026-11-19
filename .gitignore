@@ -9,3 +9,5 @@ dist/
 .hatch/
 *.dist-info/
 .chainlit/translations/
+.run/
+/secrets.yaml
