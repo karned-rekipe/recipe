@@ -7,6 +7,7 @@ from arclith.adapters.output.mongodb.config import MongoDBConfig
 from arclith.adapters.output.mongodb.repository import MongoDBRepository
 from arclith.domain.ports.logger import Logger
 from domain.models.recipe import Recipe, RecipeStatus
+from domain.models.recipe_filters import RecipeFilters
 from domain.ports.output.recipe_repository import RecipeRepository
 from uuid6 import UUID
 
@@ -84,31 +85,20 @@ class MongoDBRecipeRepository(MongoDBRepository[Recipe], RecipeRepository):
         offset: int = 0,
         limit: int | None = None,
     ) -> tuple[list[Recipe], int]:
-        match: dict[str, Any] = {"deleted_at": None}
-        expected_status = RecipeStatus.active if meal_planner_eligible else status
-        if expected_status is not None:
-            match["status"] = expected_status.value
-        if meal_planner_eligible:
-            match["ingredients.0"] = {"$exists": True}
-        if name:
-            match["name"] = {"$regex": re.escape(name), "$options": "i"}
-        if ingredient_uuid is not None:
-            match["ingredients.ingredient_uuid"] = str(ingredient_uuid)
-        if equipment_uuid is not None:
-            match["equipment.equipment_uuid"] = str(equipment_uuid)
-        if tag_uuid is not None:
-            match["tag_uuids"] = str(tag_uuid)
-        if difficulty is not None:
-            match["difficulty"] = difficulty
-        if origin_country is not None:
-            match["origin_country"] = origin_country
-        if price is not None:
-            match["price"] = price
-        if favorite is not None:
-            match["favorite"] = favorite
-        if season_month is not None:
-            match[f"season_months.{season_month}"] = {"$gte": 1}
-        return await self._find_page_by_match(match, offset, limit)
+        filters = RecipeFilters(
+            name=name,
+            ingredient_uuid=ingredient_uuid,
+            equipment_uuid=equipment_uuid,
+            tag_uuid=tag_uuid,
+            difficulty=difficulty,
+            origin_country=origin_country,
+            price=price,
+            favorite=favorite,
+            season_month=season_month,
+            status=status,
+            meal_planner_eligible=meal_planner_eligible,
+        )
+        return await self._find_page_by_match(_recipe_filter_match(filters), offset, limit)
 
     async def exists_by_ingredient_uuid(self, ingredient_uuid: UUID) -> bool:
         async with self._collection() as col:
@@ -155,3 +145,47 @@ class MongoDBRecipeRepository(MongoDBRepository[Recipe], RecipeRepository):
         items = [self._from_doc(doc) for doc in facet.get("data", [])]
         total = facet["total"][0]["count"] if facet.get("total") else 0
         return items, total
+
+
+def _recipe_filter_match(filters: RecipeFilters) -> dict[str, Any]:
+    match: dict[str, Any] = {"deleted_at": None}
+    for criterion in _mongo_filter_criteria(filters):
+        match.update(criterion)
+    return match
+
+
+def _mongo_filter_criteria(filters: RecipeFilters) -> tuple[dict[str, Any], ...]:
+    expected_status = RecipeStatus.active if filters.meal_planner_eligible else filters.status
+    return (
+        _optional_match("status", expected_status.value if expected_status is not None else None),
+        _meal_planner_eligibility_match(filters.meal_planner_eligible),
+        _name_match(filters.name),
+        _optional_match("ingredients.ingredient_uuid", _uuid_text(filters.ingredient_uuid)),
+        _optional_match("equipment.equipment_uuid", _uuid_text(filters.equipment_uuid)),
+        _optional_match("tag_uuids", _uuid_text(filters.tag_uuid)),
+        _optional_match("difficulty", filters.difficulty),
+        _optional_match("origin_country", filters.origin_country),
+        _optional_match("price", filters.price),
+        _optional_match("favorite", filters.favorite),
+        _season_match(filters.season_month),
+    )
+
+
+def _optional_match(field: str, value: Any | None) -> dict[str, Any]:
+    return {} if value is None else {field: value}
+
+
+def _meal_planner_eligibility_match(eligible: bool | None) -> dict[str, Any]:
+    return {"ingredients.0": {"$exists": True}} if eligible else {}
+
+
+def _name_match(name: str | None) -> dict[str, Any]:
+    return {} if not name else {"name": {"$regex": re.escape(name), "$options": "i"}}
+
+
+def _uuid_text(value: UUID | None) -> str | None:
+    return str(value) if value is not None else None
+
+
+def _season_match(month: int | None) -> dict[str, Any]:
+    return {} if month is None else {f"season_months.{month}": {"$gte": 1}}

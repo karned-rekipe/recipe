@@ -351,75 +351,74 @@ class IngredientRouter:
         if_match: Annotated[str | None, Header()] = None,
     ) -> None:
         """Partially update an ingredient (PATCH semantics)."""
-        existing = await self._service.read(self._to_uuid6(uuid))
-        if existing is None:
-            self._logger.warning("⚠️ Ingredient not found via HTTP (PATCH)", uuid=str(uuid))
-            raise HTTPException(status_code=404, detail="Ingredient not found")
-
-        if if_match:
-            expected_version = int(if_match.strip('"').lstrip('vV'))
-            if existing.version != expected_version:
-                self._logger.warning(
-                    "⚠️ Version mismatch (optimistic lock failure)",
-                    uuid=str(uuid),
-                    expected=expected_version,
-                    current=existing.version,
-                )
-                raise HTTPException(
-                    status_code=412,
-                    detail=f"Version mismatch: expected v{expected_version}, current v{existing.version}",
-                )
-
-        fields_set = payload.model_fields_set
+        existing = await self._read_ingredient_or_raise(uuid, operation="PATCH")
+        self._assert_expected_version(uuid, existing, if_match)
         try:
-            updated = await self._service.update(Ingredient(
-                uuid=existing.uuid,
-                name=payload.name if "name" in fields_set and payload.name is not None else existing.name,
-                rayon_uuid=self._to_uuid6(payload.rayon_uuid)
-                if "rayon_uuid" in fields_set and payload.rayon_uuid is not None
-                else None if "rayon_uuid" in fields_set else existing.rayon_uuid,
-                group_uuid=self._to_uuid6(payload.group_uuid)
-                if "group_uuid" in fields_set and payload.group_uuid is not None
-                else None if "group_uuid" in fields_set else existing.group_uuid,
-                main_supplier_uuid=self._to_uuid6(payload.main_supplier_uuid)
-                if "main_supplier_uuid" in fields_set and payload.main_supplier_uuid is not None
-                else None if "main_supplier_uuid" in fields_set else existing.main_supplier_uuid,
-                secondary_supplier_uuids=[self._to_uuid6(supplier_uuid) for supplier_uuid in payload.secondary_supplier_uuids]
-                if "secondary_supplier_uuids" in fields_set and payload.secondary_supplier_uuids is not None
-                else [] if "secondary_supplier_uuids" in fields_set else existing.secondary_supplier_uuids,
-                green_score=payload.green_score if "green_score" in fields_set else existing.green_score,
-                unit=payload.unit if "unit" in fields_set else existing.unit,
-                quantity=payload.quantity if "quantity" in fields_set else existing.quantity,
-                season_months=payload.season_months if payload.season_months is not None else existing.season_months,
-                media_profile=payload.media_profile if "media_profile" in fields_set and payload.media_profile is not None else existing.media_profile,
-                seasonality_profile=payload.seasonality_profile
-                if "seasonality_profile" in fields_set and payload.seasonality_profile is not None
-                else existing.seasonality_profile,
-                nutrition_profile=payload.nutrition_profile
-                if "nutrition_profile" in fields_set and payload.nutrition_profile is not None
-                else existing.nutrition_profile,
-                sustainability_profile=payload.sustainability_profile
-                if "sustainability_profile" in fields_set and payload.sustainability_profile is not None
-                else existing.sustainability_profile,
-                allergen_profile=payload.allergen_profile
-                if "allergen_profile" in fields_set and payload.allergen_profile is not None
-                else existing.allergen_profile,
-                unit_profile=payload.unit_profile if "unit_profile" in fields_set and payload.unit_profile is not None else existing.unit_profile,
-                package_profiles=payload.package_profiles
-                if "package_profiles" in fields_set and payload.package_profiles is not None
-                else existing.package_profiles,
-                substitution_profile=payload.substitution_profile
-                if "substitution_profile" in fields_set and payload.substitution_profile is not None
-                else existing.substitution_profile,
-                enrichment_profile=payload.enrichment_profile
-                if "enrichment_profile" in fields_set and payload.enrichment_profile is not None
-                else existing.enrichment_profile,
-            ))
+            updated = await self._service.update(self._ingredient_from_patch(existing, payload))
         except IngredientReferenceError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
         response.headers["Content-Location"] = f"/v1/ingredients/{uuid}"
         response.headers["ETag"] = f'"{updated.version}"'
+
+    async def _read_ingredient_or_raise(self, uuid: StdUUID, *, operation: str) -> Ingredient:
+        ingredient = await self._service.read(self._to_uuid6(uuid))
+        if ingredient is not None:
+            return ingredient
+        self._logger.warning(f"⚠️ Ingredient not found via HTTP ({operation})", uuid=str(uuid))
+        raise HTTPException(status_code=404, detail="Ingredient not found")
+
+    def _assert_expected_version(self, uuid: StdUUID, ingredient: Ingredient, if_match: str | None) -> None:
+        if if_match is None:
+            return
+        expected_version = int(if_match.strip('"').lstrip("vV"))
+        if ingredient.version == expected_version:
+            return
+        self._logger.warning(
+            "⚠️ Version mismatch (optimistic lock failure)",
+            uuid=str(uuid),
+            expected=expected_version,
+            current=ingredient.version,
+        )
+        raise HTTPException(
+            status_code=412,
+            detail=f"Version mismatch: expected v{expected_version}, current v{ingredient.version}",
+        )
+
+    def _ingredient_from_patch(self, existing: Ingredient, payload: IngredientPatchSchema) -> Ingredient:
+        updates = payload.model_dump(exclude_unset=True)
+        self._discard_none_patch_values(updates)
+        self._coerce_patch_uuids(updates)
+        data = existing.model_dump(mode="python", exclude_computed_fields=True)
+        data.update(updates)
+        return Ingredient.model_validate(data)
+
+    @staticmethod
+    def _discard_none_patch_values(updates: dict) -> None:
+        preserve_existing_if_none = {
+            "name",
+            "season_months",
+            "media_profile",
+            "seasonality_profile",
+            "nutrition_profile",
+            "sustainability_profile",
+            "allergen_profile",
+            "unit_profile",
+            "package_profiles",
+            "substitution_profile",
+            "enrichment_profile",
+        }
+        for field_name in preserve_existing_if_none:
+            if updates.get(field_name) is None:
+                updates.pop(field_name, None)
+
+    def _coerce_patch_uuids(self, updates: dict) -> None:
+        for field_name in ("rayon_uuid", "group_uuid", "main_supplier_uuid"):
+            if field_name in updates and updates[field_name] is not None:
+                updates[field_name] = self._to_uuid6(updates[field_name])
+        if "secondary_supplier_uuids" in updates:
+            values = updates["secondary_supplier_uuids"] or []
+            updates["secondary_supplier_uuids"] = [self._to_uuid6(value) for value in values]
 
     async def delete_ingredient(self, uuid: StdUUID) -> None:
         """Soft-delete an ingredient."""

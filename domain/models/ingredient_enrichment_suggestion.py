@@ -6,6 +6,17 @@ from pydantic import Field, field_validator
 from uuid6 import UUID
 
 SuggestionStatus = Literal["pending", "partially_applied", "applied", "rejected", "expired"]
+_ENRICHABLE_FIELDS = frozenset({
+    "media_profile",
+    "seasonality_profile",
+    "nutrition_profile",
+    "sustainability_profile",
+    "allergen_profile",
+    "unit_profile",
+    "package_profiles",
+    "substitution_profile",
+    "enrichment_profile",
+})
 
 
 class IngredientEnrichmentSuggestion(Entity):
@@ -27,3 +38,11 @@ class IngredientEnrichmentSuggestion(Entity):
         if isinstance(value, UUID):
             return value
         return UUID(str(value))
+
+    @field_validator("proposed_patch")
+    @classmethod
+    def validate_enrichable_fields(cls, value: dict[str, Any]) -> dict[str, Any]:
+        forbidden = set(value) - _ENRICHABLE_FIELDS
+        if forbidden:
+            raise ValueError(f"Unsupported enrichment fields: {', '.join(sorted(forbidden))}")
+        return value

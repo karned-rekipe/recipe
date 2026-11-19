@@ -43,7 +43,10 @@ def _get_header_tenant_resolver():
 
 def _extract_headers(ctx: fastmcp.Context) -> dict[str, str]:
     try:
-        request = ctx.request_context.request
+        request_context = ctx.request_context
+        if request_context is None:
+            return {}
+        request = request_context.request
         if request is None:
             return {}
         return dict(request.headers)
@@ -70,7 +73,7 @@ async def _inject_from_tenant_id(tenant_id: str) -> None:
 
 async def _inject_from_tenant_header(ctx: fastmcp.Context) -> bool:
     config = _get_config()
-    if not config.adapters.multitenant:
+    if not config.adapters.multitenant or not _is_auth_disabled():
         return False
 
     headers = _extract_headers(ctx)
@@ -126,6 +129,8 @@ def _get_require_auth_mcp_fn() -> Callable:
 
 
 async def require_auth_mcp(ctx: fastmcp.Context | None) -> dict:
+    if _is_auth_disabled():
+        return {"sub": "local-dev", "auth_disabled": True}
     if ctx is None:
         raise PermissionError("401: Authentification requise (transport stdio non supporté)")
     return await _get_require_auth_mcp_fn()(ctx)

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Self
+from typing import Any, Self
 from uuid import UUID as StdUUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -391,128 +391,78 @@ def recipe_create_payload_to_domain(payload: RecipeCreateSchema) -> Recipe:
 
 
 def recipe_update_payload_to_domain(existing: Recipe, payload: RecipeUpdateSchema) -> Recipe:
-    ingredients = [_to_recipe_ingredient(ingredient) for ingredient in payload.ingredients]
-    return Recipe(
-        uuid=existing.uuid,
-        created_at=existing.created_at,
-        created_by=existing.created_by,
-        updated_at=existing.updated_at,
-        updated_by=existing.updated_by,
-        deleted_at=existing.deleted_at,
-        deleted_by=existing.deleted_by,
-        version=existing.version,
-        name=payload.name,
-        description=payload.description,
-        origin_country=payload.origin_country,
-        meal_type=payload.meal_type,
-        meal_category=payload.meal_category,
-        servings=payload.servings,
-        unit_count=payload.unit_count,
-        difficulty=payload.difficulty,
-        price=payload.price,
-        main_image=payload.main_image,
-        secondary_images=list(payload.secondary_images),
-        favorite=payload.favorite if "favorite" in payload.model_fields_set else existing.favorite,
-        tag_uuids=[UUID(str(tag_uuid)) for tag_uuid in payload.tag_uuids],
-        season_months=dict(existing.season_months),
-        status=_resolve_recipe_status(payload.status, payload.model_fields_set, ingredients),
-        quality_status=payload.quality_status if "quality_status" in payload.model_fields_set else existing.quality_status,
-        legacy_id=payload.legacy_id if "legacy_id" in payload.model_fields_set else existing.legacy_id,
-        created_at_legacy=payload.created_at_legacy if "created_at_legacy" in payload.model_fields_set else existing.created_at_legacy,
-        updated_at_legacy=payload.updated_at_legacy if "updated_at_legacy" in payload.model_fields_set else existing.updated_at_legacy,
-        migration_metadata=dict(payload.migration_metadata)
-        if "migration_metadata" in payload.model_fields_set
-        else dict(existing.migration_metadata),
-        sources=[Source(**source.model_dump()) for source in payload.sources],
-        components=[_to_recipe_component(component) for component in payload.components],
-        ingredients=ingredients,
-        equipment=[_to_recipe_equipment(item) for item in payload.equipment],
-        steps=[_to_step(step) for step in payload.steps],
-    )
+    data = _recipe_model_data(existing)
+    updates = _converted_recipe_values(payload.model_dump())
+    _preserve_unspecified_update_values(updates, payload.model_fields_set)
+    data.update(updates)
+    data["season_months"] = dict(existing.season_months)
+    data["status"] = _resolve_recipe_status(payload.status, payload.model_fields_set, data["ingredients"])
+    return Recipe.model_validate(data)
 
 
 def recipe_patch_payload_to_domain(existing: Recipe, payload: RecipePatchSchema) -> Recipe:
-    fields_set = payload.model_fields_set
+    data = _recipe_model_data(existing)
+    data.update(_converted_recipe_values(payload.model_dump(exclude_unset=True)))
+    data["status"] = _resolve_recipe_status(payload.status, payload.model_fields_set, data["ingredients"])
+    return Recipe.model_validate(data)
 
-    secondary_images = list(existing.secondary_images)
-    if "secondary_images" in fields_set:
-        if payload.secondary_images is None:
-            raise ValueError("secondary_images cannot be null when provided")
-        secondary_images = list(payload.secondary_images)
 
-    migration_metadata = dict(existing.migration_metadata)
-    if "migration_metadata" in fields_set:
-        if payload.migration_metadata is None:
-            raise ValueError("migration_metadata cannot be null when provided")
-        migration_metadata = dict(payload.migration_metadata)
+def _recipe_model_data(recipe: Recipe) -> dict[str, Any]:
+    return recipe.model_dump(mode="python", exclude_computed_fields=True)
 
-    sources = list(existing.sources)
-    if "sources" in fields_set:
-        if payload.sources is None:
-            raise ValueError("sources cannot be null when provided")
-        sources = [Source(**source.model_dump()) for source in payload.sources]
 
-    components = list(existing.components)
-    if "components" in fields_set:
-        if payload.components is None:
-            raise ValueError("components cannot be null when provided")
-        components = [_to_recipe_component(component) for component in payload.components]
+def _converted_recipe_values(values: dict[str, Any]) -> dict[str, Any]:
+    result = dict(values)
+    _convert_tag_uuids(result)
+    _convert_sources(result)
+    _convert_components(result)
+    _convert_ingredients(result)
+    _convert_equipment(result)
+    _convert_steps(result)
+    return result
 
-    ingredients = list(existing.ingredients)
-    if "ingredients" in fields_set:
-        if payload.ingredients is None:
-            raise ValueError("ingredients cannot be null when provided")
-        ingredients = [_to_recipe_ingredient(ingredient) for ingredient in payload.ingredients]
 
-    equipment = list(existing.equipment)
-    if "equipment" in fields_set:
-        if payload.equipment is None:
-            raise ValueError("equipment cannot be null when provided")
-        equipment = [_to_recipe_equipment(item) for item in payload.equipment]
+def _convert_tag_uuids(values: dict[str, Any]) -> None:
+    if "tag_uuids" in values:
+        values["tag_uuids"] = [UUID(str(tag_uuid)) for tag_uuid in values["tag_uuids"]]
 
-    steps = list(existing.steps)
-    if "steps" in fields_set:
-        if payload.steps is None:
-            raise ValueError("steps cannot be null when provided")
-        steps = [_to_step(step) for step in payload.steps]
 
-    return Recipe(
-        uuid=existing.uuid,
-        created_at=existing.created_at,
-        created_by=existing.created_by,
-        updated_at=existing.updated_at,
-        updated_by=existing.updated_by,
-        deleted_at=existing.deleted_at,
-        deleted_by=existing.deleted_by,
-        version=existing.version,
-        name=payload.name if "name" in fields_set else existing.name,
-        description=payload.description if "description" in fields_set else existing.description,
-        origin_country=payload.origin_country if "origin_country" in fields_set else existing.origin_country,
-        meal_type=payload.meal_type if "meal_type" in fields_set else existing.meal_type,
-        meal_category=payload.meal_category if "meal_category" in fields_set else existing.meal_category,
-        servings=payload.servings if "servings" in fields_set else existing.servings,
-        unit_count=payload.unit_count if "unit_count" in fields_set else existing.unit_count,
-        difficulty=payload.difficulty if "difficulty" in fields_set else existing.difficulty,
-        price=payload.price if "price" in fields_set else existing.price,
-        main_image=payload.main_image if "main_image" in fields_set else existing.main_image,
-        secondary_images=secondary_images,
-        favorite=payload.favorite if "favorite" in fields_set else existing.favorite,
-        tag_uuids=[UUID(str(tag_uuid)) for tag_uuid in payload.tag_uuids]
-        if "tag_uuids" in fields_set and payload.tag_uuids is not None
-        else list(existing.tag_uuids),
-        season_months=dict(existing.season_months),
-        status=_resolve_recipe_status(payload.status, fields_set, ingredients),
-        quality_status=payload.quality_status if "quality_status" in fields_set else existing.quality_status,
-        legacy_id=payload.legacy_id if "legacy_id" in fields_set else existing.legacy_id,
-        created_at_legacy=payload.created_at_legacy if "created_at_legacy" in fields_set else existing.created_at_legacy,
-        updated_at_legacy=payload.updated_at_legacy if "updated_at_legacy" in fields_set else existing.updated_at_legacy,
-        migration_metadata=migration_metadata,
-        sources=sources,
-        components=components,
-        ingredients=ingredients,
-        equipment=equipment,
-        steps=steps,
-    )
+def _convert_sources(values: dict[str, Any]) -> None:
+    if "sources" in values:
+        values["sources"] = [Source(**source) for source in values["sources"]]
+
+
+def _convert_components(values: dict[str, Any]) -> None:
+    if "components" in values:
+        values["components"] = [RecipeComponent(**component) for component in values["components"]]
+
+
+def _convert_ingredients(values: dict[str, Any]) -> None:
+    if "ingredients" in values:
+        values["ingredients"] = [RecipeIngredient(**ingredient) for ingredient in values["ingredients"]]
+
+
+def _convert_equipment(values: dict[str, Any]) -> None:
+    if "equipment" in values:
+        values["equipment"] = [RecipeEquipment(**item) for item in values["equipment"]]
+
+
+def _convert_steps(values: dict[str, Any]) -> None:
+    if "steps" in values:
+        values["steps"] = [Step(**step) for step in values["steps"]]
+
+
+def _preserve_unspecified_update_values(updates: dict[str, Any], fields_set: set[str]) -> None:
+    for field_name in (
+        "favorite",
+        "quality_status",
+        "legacy_id",
+        "created_at_legacy",
+        "updated_at_legacy",
+        "migration_metadata",
+    ):
+        if field_name not in fields_set:
+            updates.pop(field_name, None)
 
 
 def _to_recipe_ingredient(payload: RecipeIngredientWriteSchema) -> RecipeIngredient:

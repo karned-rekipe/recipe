@@ -1,4 +1,5 @@
-from typing import Any
+from collections.abc import Iterable
+from typing import Any, Protocol
 
 from application.use_cases import FindByNameUseCase
 from arclith import BaseService, Logger
@@ -36,6 +37,10 @@ class RecipeComponentCycleError(ValueError):
 
 class RecipeComponentInUseError(ValueError):
     """Raised when deleting a recipe still used as a component."""
+
+
+class _ReadableRepository(Protocol):
+    async def read(self, uuid: UUID) -> object | None: ...
 
 
 class RecipeService(BaseService[Recipe]):
@@ -220,43 +225,48 @@ class RecipeService(BaseService[Recipe]):
         return await self._recipe_repo.exists_by_tag_uuid(tag_uuid)
 
     async def _ensure_references_exist(self, recipe: Recipe) -> None:
-        missing_ingredients: list[str] = []
-        if self._ingredient_repo is not None:
-            for ingredient_line in recipe.ingredients:
-                if await self._ingredient_repo.read(UUID(str(ingredient_line.ingredient_uuid))) is None:
-                    missing_ingredients.append(str(ingredient_line.ingredient_uuid))
-
-        missing_equipment: list[str] = []
-        if self._equipment_repo is not None:
-            for equipment_line in recipe.equipment:
-                if await self._equipment_repo.read(UUID(str(equipment_line.equipment_uuid))) is None:
-                    missing_equipment.append(str(equipment_line.equipment_uuid))
-
-        missing_tags: list[str] = []
-        if self._tag_repo is not None:
-            for tag_uuid in recipe.tag_uuids:
-                if await self._tag_repo.read(UUID(str(tag_uuid))) is None:
-                    missing_tags.append(str(tag_uuid))
-
-        missing_components: list[str] = []
-        for component in recipe.components:
-            child = await self.read(UUID(str(component.recipe_uuid)))
-            if child is None:
-                missing_components.append(str(component.recipe_uuid))
-
-        errors: list[str] = []
-        if missing_ingredients:
-            errors.append(f"Unknown ingredient UUID(s): {', '.join(missing_ingredients)}")
-        if missing_equipment:
-            errors.append(f"Unknown equipment UUID(s): {', '.join(missing_equipment)}")
-        if missing_tags:
-            errors.append(f"Unknown tag UUID(s): {', '.join(missing_tags)}")
-        if missing_components:
-            errors.append(f"Unknown component recipe UUID(s): {', '.join(missing_components)}")
+        missing_references = await self._missing_references(recipe)
+        errors = _reference_errors(missing_references)
         if errors:
             raise RecipeReferenceError("; ".join(errors))
 
         await self._ensure_component_graph_is_acyclic(recipe)
+
+    async def _missing_references(self, recipe: Recipe) -> dict[str, list[str]]:
+        return {
+            "ingredient": await self._missing_ingredients(recipe),
+            "equipment": await self._missing_equipment(recipe),
+            "tag": await self._missing_tags(recipe),
+            "component recipe": await self._missing_components(recipe),
+        }
+
+    async def _missing_ingredients(self, recipe: Recipe) -> list[str]:
+        if self._ingredient_repo is None:
+            return []
+        return await _missing_repository_references(
+            self._ingredient_repo,
+            [line.ingredient_uuid for line in recipe.ingredients],
+        )
+
+    async def _missing_equipment(self, recipe: Recipe) -> list[str]:
+        if self._equipment_repo is None:
+            return []
+        return await _missing_repository_references(
+            self._equipment_repo,
+            [line.equipment_uuid for line in recipe.equipment],
+        )
+
+    async def _missing_tags(self, recipe: Recipe) -> list[str]:
+        if self._tag_repo is None:
+            return []
+        return await _missing_repository_references(self._tag_repo, recipe.tag_uuids)
+
+    async def _missing_components(self, recipe: Recipe) -> list[str]:
+        missing: list[str] = []
+        for component in recipe.components:
+            if await self.read(UUID(str(component.recipe_uuid))) is None:
+                missing.append(str(component.recipe_uuid))
+        return missing
 
     async def _read_ingredient(self, ingredient_uuid: object) -> Ingredient | None:
         if self._ingredient_repo is None:
@@ -285,26 +295,62 @@ class RecipeService(BaseService[Recipe]):
 
     async def _hydrate_ingredient_line(self, line: dict[str, Any], ingredient: Ingredient | None) -> dict[str, Any]:
         ingredient_uuid = line["ingredient_uuid"]
-        group = await self._read_group(ingredient.group_uuid) if ingredient is not None else None
-        rayon = await self._read_rayon(ingredient.rayon_uuid) if ingredient is not None else None
-        return {
+        group, rayon = await self._ingredient_catalog_entries(ingredient)
+        payload = {
             "ingredient_uuid": ingredient_uuid,
-            "name": ingredient.name if ingredient is not None else f"Ingrédient {ingredient_uuid}",
             "quantity": line["quantity"],
             "unit": line["unit"],
-            "season_months": ingredient.season_months if ingredient is not None else {},
-            "rayon_uuid": str(ingredient.rayon_uuid) if ingredient is not None and ingredient.rayon_uuid is not None else None,
-            "group_uuid": str(ingredient.group_uuid) if ingredient is not None and ingredient.group_uuid is not None else None,
-            "main_supplier_uuid": str(ingredient.main_supplier_uuid)
-            if ingredient is not None and ingredient.main_supplier_uuid is not None
-            else None,
-            "secondary_supplier_uuids": [str(uuid) for uuid in ingredient.secondary_supplier_uuids] if ingredient is not None else [],
-            "rayon": self._catalog_payload(rayon),
-            "group": self._catalog_payload(group),
-            "green_score": ingredient.green_score if ingredient is not None else None,
             "component_uuid": line.get("component_uuid"),
             "source_recipe_uuid": line.get("source_recipe_uuid"),
             "line_origin": line.get("line_origin") or RecipeLineOrigin.manual.value,
+        }
+        payload.update(self._ingredient_line_payload(ingredient, ingredient_uuid, group, rayon))
+        return payload
+
+    async def _ingredient_catalog_entries(
+        self,
+        ingredient: Ingredient | None,
+    ) -> tuple[IngredientGroup | None, IngredientRayon | None]:
+        if ingredient is None:
+            return None, None
+        return (
+            await self._read_group(ingredient.group_uuid),
+            await self._read_rayon(ingredient.rayon_uuid),
+        )
+
+    def _ingredient_line_payload(
+        self,
+        ingredient: Ingredient | None,
+        ingredient_uuid: object,
+        group: IngredientGroup | None,
+        rayon: IngredientRayon | None,
+    ) -> dict[str, Any]:
+        if ingredient is None:
+            return self._missing_ingredient_line_payload(ingredient_uuid)
+        return {
+            "name": ingredient.name,
+            "season_months": ingredient.season_months,
+            "rayon_uuid": _optional_uuid_text(ingredient.rayon_uuid),
+            "group_uuid": _optional_uuid_text(ingredient.group_uuid),
+            "main_supplier_uuid": _optional_uuid_text(ingredient.main_supplier_uuid),
+            "secondary_supplier_uuids": [str(uuid) for uuid in ingredient.secondary_supplier_uuids],
+            "rayon": self._catalog_payload(rayon),
+            "group": self._catalog_payload(group),
+            "green_score": ingredient.green_score,
+        }
+
+    @staticmethod
+    def _missing_ingredient_line_payload(ingredient_uuid: object) -> dict[str, Any]:
+        return {
+            "name": f"Ingrédient {ingredient_uuid}",
+            "season_months": {},
+            "rayon_uuid": None,
+            "group_uuid": None,
+            "main_supplier_uuid": None,
+            "secondary_supplier_uuids": [],
+            "rayon": None,
+            "group": None,
+            "green_score": None,
         }
 
     @staticmethod
@@ -526,3 +572,26 @@ class RecipeService(BaseService[Recipe]):
         if str(line.equipment_uuid) != str(source_uuid):
             return line
         return line.model_copy(update={"equipment_uuid": target_uuid})
+
+
+async def _missing_repository_references(
+    repository: _ReadableRepository,
+    uuids: Iterable[object],
+) -> list[str]:
+    missing: list[str] = []
+    for uuid in uuids:
+        if await repository.read(UUID(str(uuid))) is None:
+            missing.append(str(uuid))
+    return missing
+
+
+def _reference_errors(missing_references: dict[str, list[str]]) -> list[str]:
+    return [
+        f"Unknown {reference_type} UUID(s): {', '.join(uuids)}"
+        for reference_type, uuids in missing_references.items()
+        if uuids
+    ]
+
+
+def _optional_uuid_text(value: UUID | None) -> str | None:
+    return str(value) if value is not None else None

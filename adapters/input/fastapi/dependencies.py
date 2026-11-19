@@ -50,7 +50,7 @@ def _get_header_tenant_resolver():
 
 async def _inject_from_tenant_header(request: Request) -> bool:
     config = _get_config()
-    if not config.adapters.multitenant:
+    if not config.adapters.multitenant or not _is_auth_disabled():
         return False
 
     tenant_id = request.headers.get("X-Tenant-URI") or request.headers.get("x-tenant-uri")
@@ -59,10 +59,6 @@ async def _inject_from_tenant_header(request: Request) -> bool:
 
     await _inject_from_tenant_id(tenant_id)
     return True
-
-
-def _is_auth_disabled() -> bool:
-    return os.getenv("REKIPE_AUTH_DISABLED", "").lower() in {"1", "true", "yes", "on"}
 
 
 def _get_local_tenant_id() -> str | None:

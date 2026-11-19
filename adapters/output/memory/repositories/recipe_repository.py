@@ -1,5 +1,6 @@
 from arclith.adapters.output.memory.repository import InMemoryRepository
 from domain.models.recipe import Recipe, RecipeStatus
+from domain.models.recipe_filters import RecipeFilters, matches_recipe_filters
 from domain.ports.output.recipe_repository import RecipeRepository
 from uuid6 import UUID
 
@@ -62,19 +63,21 @@ class InMemoryRecipeRepository(InMemoryRepository[Recipe], RecipeRepository):
         filtered = [
             recipe
             for recipe in self._store.values()
-            if self._matches_filters(
+            if matches_recipe_filters(
                 recipe,
-                name=name,
-                ingredient_uuid=ingredient_uuid,
-                equipment_uuid=equipment_uuid,
-                tag_uuid=tag_uuid,
-                difficulty=difficulty,
-                origin_country=origin_country,
-                price=price,
-                favorite=favorite,
-                season_month=season_month,
-                status=status,
-                meal_planner_eligible=meal_planner_eligible,
+                RecipeFilters(
+                    name=name,
+                    ingredient_uuid=ingredient_uuid,
+                    equipment_uuid=equipment_uuid,
+                    tag_uuid=tag_uuid,
+                    difficulty=difficulty,
+                    origin_country=origin_country,
+                    price=price,
+                    favorite=favorite,
+                    season_month=season_month,
+                    status=status,
+                    meal_planner_eligible=meal_planner_eligible,
+                ),
             )
         ]
         total = len(filtered)
@@ -99,44 +102,3 @@ class InMemoryRecipeRepository(InMemoryRepository[Recipe], RecipeRepository):
             for recipe in self._store.values()
         )
 
-    @staticmethod
-    def _matches_filters(
-        recipe: Recipe,
-        name: str | None = None,
-        ingredient_uuid: UUID | None = None,
-        equipment_uuid: UUID | None = None,
-        tag_uuid: UUID | None = None,
-        difficulty: int | None = None,
-        origin_country: str | None = None,
-        price: int | None = None,
-        favorite: bool | None = None,
-        season_month: int | None = None,
-        status: RecipeStatus | None = None,
-        meal_planner_eligible: bool | None = None,
-    ) -> bool:
-        if recipe.is_deleted:
-            return False
-        expected_status = RecipeStatus.active if meal_planner_eligible else status
-        if expected_status is not None and recipe.status != expected_status:
-            return False
-        if meal_planner_eligible and not recipe.ingredients:
-            return False
-        if name and name.lower() not in recipe.name.lower():
-            return False
-        if ingredient_uuid is not None and not any(str(line.ingredient_uuid) == str(ingredient_uuid) for line in recipe.ingredients):
-            return False
-        if equipment_uuid is not None and not any(str(line.equipment_uuid) == str(equipment_uuid) for line in recipe.equipment):
-            return False
-        if tag_uuid is not None and not any(str(item) == str(tag_uuid) for item in recipe.tag_uuids):
-            return False
-        if difficulty is not None and recipe.difficulty != difficulty:
-            return False
-        if origin_country is not None:
-            recipe_origin = getattr(recipe.origin_country, "value", recipe.origin_country)
-            if recipe_origin != origin_country:
-                return False
-        if price is not None and recipe.price != price:
-            return False
-        if favorite is not None and recipe.favorite != favorite:
-            return False
-        return season_month is None or recipe.season_months.get(season_month, 0) > 0

@@ -30,7 +30,7 @@ class TagRouter:
         self._register_routes()
 
     def _register_routes(self) -> None:
-        self.router.add_api_route(methods=["POST"], path="/", endpoint=self.create_tag, response_model=ApiResponse[TagCreatedSchema], status_code=201)
+        self.router.add_api_route(methods=["POST"], path="/", endpoint=self.create_tag, response_model=None, status_code=201)
         self.router.add_api_route(methods=["GET"], path="/", endpoint=self.list_tags, response_model=PaginatedResponse[TagSchema], status_code=200)
         self.router.add_api_route(methods=["GET"], path="/{uuid}", endpoint=self.get_tag, response_model=ApiResponse[TagSchema], status_code=200)
         self.router.add_api_route(methods=["PUT"], path="/{uuid}", endpoint=self.update_tag, status_code=204)

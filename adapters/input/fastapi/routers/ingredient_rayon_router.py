@@ -29,7 +29,7 @@ class IngredientRayonRouter:
         self._register_routes()
 
     def _register_routes(self) -> None:
-        self.router.add_api_route(methods=["POST"], path="/", endpoint=self.create_rayon, response_model=ApiResponse[IngredientRayonCreatedSchema], status_code=201)
+        self.router.add_api_route(methods=["POST"], path="/", endpoint=self.create_rayon, response_model=None, status_code=201)
         self.router.add_api_route(methods=["GET"], path="/", endpoint=self.list_rayons, response_model=PaginatedResponse[IngredientRayonSchema], status_code=200)
         self.router.add_api_route(methods=["GET"], path="/{uuid}", endpoint=self.get_rayon, response_model=ApiResponse[IngredientRayonSchema], status_code=200)
         self.router.add_api_route(methods=["PUT"], path="/{uuid}", endpoint=self.update_rayon, status_code=204)

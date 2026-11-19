@@ -59,42 +59,75 @@ class IngredientEnrichmentSuggestionService(BaseService[IngredientEnrichmentSugg
         if suggestion.status not in {"pending", "partially_applied"}:
             raise IngredientEnrichmentSuggestionError(f"Suggestion status does not allow apply: {suggestion.status}")
 
+        applicable_patch, skipped_fields = self._applicable_patch(ingredient, suggestion, fields, force)
+        await self._apply_ingredient_patch(ingredient, applicable_patch)
+        updated = self._applied_suggestion(suggestion, applicable_patch, skipped_fields)
+        self._log_apply(ingredient_uuid, suggestion_uuid, applicable_patch, skipped_fields)
+        return await self._suggestion_repo.update(updated)
+
+    def _applicable_patch(
+        self,
+        ingredient: Ingredient,
+        suggestion: IngredientEnrichmentSuggestion,
+        fields: list[str] | None,
+        force: bool,
+    ) -> tuple[dict[str, Any], list[str]]:
         requested_fields = self._select_requested_fields(suggestion, fields)
         rejected_fields = set(suggestion.rejected_fields)
         applicable_patch: dict[str, Any] = {}
         skipped_fields: list[str] = []
         for field_name, value in suggestion.proposed_patch.items():
-            if field_name not in requested_fields or field_name in rejected_fields:
+            if (
+                field_name not in requested_fields
+                or field_name in rejected_fields
+                or field_name in suggestion.applied_fields
+            ):
                 continue
             if not force and self._is_validated_field(ingredient, field_name):
                 skipped_fields.append(field_name)
                 continue
             applicable_patch[field_name] = value
+        return applicable_patch, skipped_fields
 
-        if applicable_patch:
-            updated_payload = ingredient.model_dump(mode="python", exclude_computed_fields=True)
-            updated_payload.update(applicable_patch)
-            await self._ingredient_repo.update(Ingredient.model_validate(updated_payload))
+    async def _apply_ingredient_patch(self, ingredient: Ingredient, patch: dict[str, Any]) -> None:
+        if not patch:
+            return
+        updated_payload = ingredient.model_dump(mode="python", exclude_computed_fields=True)
+        updated_payload.update(patch)
+        await self._ingredient_repo.update(Ingredient.model_validate(updated_payload))
 
-        applied_fields = self._merge_fields(suggestion.applied_fields, applicable_patch)
-        new_status = self._status_from_field_sets(suggestion, applied_fields, suggestion.rejected_fields)
-        if skipped_fields and new_status == "pending":
-            new_status = "partially_applied"
-        updated = suggestion.model_copy(
+    def _applied_suggestion(
+        self,
+        suggestion: IngredientEnrichmentSuggestion,
+        patch: dict[str, Any],
+        skipped_fields: list[str],
+    ) -> IngredientEnrichmentSuggestion:
+        applied_fields = self._merge_fields(suggestion.applied_fields, patch)
+        status = self._status_from_field_sets(suggestion, applied_fields, suggestion.rejected_fields)
+        if skipped_fields and status == "pending":
+            status = "partially_applied"
+        return suggestion.model_copy(
             update={
-                "status": new_status,
+                "status": status,
                 "applied_fields": applied_fields,
-                "applied_at": datetime.now(UTC) if applicable_patch else suggestion.applied_at,
+                "applied_at": datetime.now(UTC) if patch else suggestion.applied_at,
             }
         )
+
+    def _log_apply(
+        self,
+        ingredient_uuid: UUID,
+        suggestion_uuid: UUID,
+        patch: dict[str, Any],
+        skipped_fields: list[str],
+    ) -> None:
         self._logger.info(
             "Ingredient enrichment suggestion applied",
             ingredient_uuid=str(ingredient_uuid),
             suggestion_uuid=str(suggestion_uuid),
-            applied_fields=list(applicable_patch),
+            applied_fields=list(patch),
             skipped_fields=skipped_fields,
         )
-        return await self._suggestion_repo.update(updated)
 
     async def reject(
         self,
@@ -152,6 +185,8 @@ class IngredientEnrichmentSuggestionService(BaseService[IngredientEnrichmentSugg
     @staticmethod
     def _is_validated_field(ingredient: Ingredient, field_name: str) -> bool:
         value = getattr(ingredient, field_name, None)
+        if isinstance(value, list):
+            return any(getattr(item, "validated", False) for item in value)
         validated = getattr(value, "validated", None)
         if validated is not None:
             return bool(validated)
@@ -217,7 +252,7 @@ class IngredientEnrichmentSuggestionService(BaseService[IngredientEnrichmentSugg
             return
 
         profile_payload = ingredient.enrichment_profile.model_dump(mode="python")
-        profile_payload.update(enrichment_profile)
+        profile_payload.update(_suggested_enrichment_metadata(enrichment_profile, ingredient))
         updated_ingredient = ingredient.model_copy(
             update={
                 "enrichment_profile": EnrichmentProfile.model_validate(profile_payload),
@@ -240,3 +275,17 @@ class IngredientEnrichmentSuggestionService(BaseService[IngredientEnrichmentSugg
             normalized_profile.pop("last_enriched_at", None)
             normalized["enrichment_profile"] = normalized_profile
         return normalized
+
+
+def _suggested_enrichment_metadata(
+    proposed_profile: dict[str, Any],
+    ingredient: Ingredient,
+) -> dict[str, Any]:
+    metadata = {
+        field_name: proposed_profile[field_name]
+        for field_name in ("completeness_score", "missing_fields", "last_run_uuid", "last_enriched_at")
+        if field_name in proposed_profile
+    }
+    if ingredient.enrichment_profile.status not in {"validated", "rejected"}:
+        metadata["status"] = "suggested"
+    return metadata

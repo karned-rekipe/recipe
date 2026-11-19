@@ -29,7 +29,7 @@ class IngredientGroupRouter:
         self._register_routes()
 
     def _register_routes(self) -> None:
-        self.router.add_api_route(methods=["POST"], path="/", endpoint=self.create_group, response_model=ApiResponse[IngredientGroupCreatedSchema], status_code=201)
+        self.router.add_api_route(methods=["POST"], path="/", endpoint=self.create_group, response_model=None, status_code=201)
         self.router.add_api_route(methods=["GET"], path="/", endpoint=self.list_groups, response_model=PaginatedResponse[IngredientGroupSchema], status_code=200)
         self.router.add_api_route(methods=["GET"], path="/{uuid}", endpoint=self.get_group, response_model=ApiResponse[IngredientGroupSchema], status_code=200)
         self.router.add_api_route(methods=["PUT"], path="/{uuid}", endpoint=self.update_group, status_code=204)
