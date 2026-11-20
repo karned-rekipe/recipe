@@ -1,4 +1,4 @@
-from pydantic import Field, computed_field
+from pydantic import Field, computed_field, field_validator
 
 from arclith.domain.models.entity import Entity
 from domain.models.recipe_line_origin import RecipeLineOrigin
@@ -26,6 +26,15 @@ class Step(Entity):
         RecipeLineOrigin.manual,
         description="Whether the step is manually owned by the recipe or projected from a component.",
     )
+
+    @field_validator("component_uuid", "source_recipe_uuid", mode="before")
+    @classmethod
+    def coerce_optional_uuid(cls, value: object) -> UUID | None:
+        if value is None:
+            return None
+        if isinstance(value, UUID):
+            return value
+        return UUID(str(value))
 
     @computed_field  # type: ignore[prop-decorator]
     @property
