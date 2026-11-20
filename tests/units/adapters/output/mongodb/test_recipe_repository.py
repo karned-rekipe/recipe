@@ -62,15 +62,23 @@ def test_from_doc_restores_nested_aggregate(logger):
         MongoDBConfig(uri="mongodb://localhost:27017", db_name="test"),
         logger,
     )
+    component = RecipeComponent(recipe_uuid=COMPONENT_RECIPE_UUID, label="Crème anglaise", rank=1)
     original = Recipe(
         name="Farine",
         servings=4,
         legacy_id=42,
         migration_metadata={"source_table": "mkg_recipe"},
-        components=[RecipeComponent(recipe_uuid=COMPONENT_RECIPE_UUID, label="Crème anglaise", rank=1)],
+        components=[component],
         ingredients=[RecipeIngredient(ingredient_uuid=INGREDIENT_UUID, quantity=500, unit="g")],
         equipment=[RecipeEquipment(equipment_uuid=EQUIPMENT_UUID, quantity=1)],
-        steps=[Step(name="Melanger", rank=1)],
+        steps=[
+            Step(
+                name="Melanger",
+                rank=1,
+                component_uuid=component.uuid,
+                source_recipe_uuid=component.recipe_uuid,
+            )
+        ],
     )
 
     restored = repository._from_doc(repository._to_doc(original))
@@ -83,3 +91,5 @@ def test_from_doc_restores_nested_aggregate(logger):
     assert str(restored.ingredients[0].ingredient_uuid) == INGREDIENT_UUID
     assert str(restored.equipment[0].equipment_uuid) == EQUIPMENT_UUID
     assert restored.steps[0].uuid == original.steps[0].uuid
+    assert restored.steps[0].component_uuid == component.uuid
+    assert restored.steps[0].source_recipe_uuid == component.recipe_uuid
