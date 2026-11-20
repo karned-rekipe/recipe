@@ -30,15 +30,13 @@ COPY --chown=app:app domain/         domain/
 COPY --chown=app:app application/    application/
 COPY --chown=app:app adapters/       adapters/
 COPY --chown=app:app infrastructure/ infrastructure/
+COPY --chown=app:app config/         config/
 COPY --chown=app:app main.py __init__.py ./
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONPATH="/app" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-
-    # Transport à activer — surcharger avec: docker run -e MODE=mcp_http …
-    # Valeurs: api | mcp_http | mcp_sse | all
     MODE=api
 
 USER app
@@ -52,4 +50,3 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:9000/health')" || exit 1
 
 CMD ["python", "main.py"]
-
