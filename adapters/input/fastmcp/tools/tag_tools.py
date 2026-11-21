@@ -5,7 +5,8 @@ import fastmcp
 from pydantic import Field
 from uuid6 import UUID
 
-from adapters.input.fastmcp.dependencies import inject_tenant_uri, require_auth_mcp
+from adapters.input.fastmcp.authorization import DELETE_SCOPE, WRITE_SCOPE, secure_tool
+from adapters.input.fastmcp.dependencies import inject_tenant_uri
 from adapters.input.schemas.recipe_schema import RecipeSchema
 from adapters.input.schemas.tag_schema import TagSchema
 from application.services.recipe_service import RecipeService
@@ -32,41 +33,39 @@ class TagMCP:
         recipe_service = self._recipe_service
         to_uuid6 = self._to_uuid6
 
-        @self._mcp.tool
+        @secure_tool(self._mcp, WRITE_SCOPE)
         async def create_tag(
             name: Annotated[str, Field(description="Tag name.", examples=["végan"])],
             category: Annotated[TagCategory, Field(description="Tag category.")] = TagCategory.other,
             color: Annotated[str | None, Field(default=None, description="Optional hex color.")] = None,
             ctx: fastmcp.Context | None = None,
         ) -> dict:
-            await require_auth_mcp(ctx)
             await inject_tenant_uri(ctx)
             result = await service.create(Tag(name=name, category=category, color=color))
             logger.info("✅ Tag created via MCP", uuid=str(result.uuid), name=result.name)
             return TagSchema.model_validate(result).model_dump(mode="json")
 
-        @self._mcp.tool
+        @secure_tool(self._mcp)
         async def list_tags(name: Annotated[str | None, Field(default=None, description="Optional partial name filter.")] = None, ctx: fastmcp.Context | None = None) -> list[dict]:
             await inject_tenant_uri(ctx)
             items = await service.find_by_name(name) if name else await service.find_all()
             return [TagSchema.model_validate(item).model_dump(mode="json") for item in items]
 
-        @self._mcp.tool
+        @secure_tool(self._mcp)
         async def get_tag(uuid: Annotated[str, Field(description="Tag UUID.")], ctx: fastmcp.Context | None = None) -> dict | None:
             await inject_tenant_uri(ctx)
             result = await service.read(to_uuid6(StdUUID(uuid)))
             return TagSchema.model_validate(result).model_dump(mode="json") if result is not None else None
 
-        @self._mcp.tool
+        @secure_tool(self._mcp, DELETE_SCOPE)
         async def delete_tag(uuid: Annotated[str, Field(description="Tag UUID.")], ctx: fastmcp.Context | None = None) -> None:
-            await require_auth_mcp(ctx)
             await inject_tenant_uri(ctx)
             tag_uuid = to_uuid6(StdUUID(uuid))
             if recipe_service is not None and await recipe_service.is_tag_used(tag_uuid):
                 raise ValueError("Tag is used by at least one recipe")
             await service.delete(tag_uuid)
 
-        @self._mcp.tool
+        @secure_tool(self._mcp)
         async def list_recipes_for_tag(uuid: Annotated[str, Field(description="Tag UUID.")], ctx: fastmcp.Context | None = None) -> list[dict]:
             await inject_tenant_uri(ctx)
             if recipe_service is None:

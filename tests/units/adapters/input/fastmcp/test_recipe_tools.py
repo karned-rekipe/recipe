@@ -103,15 +103,13 @@ def service(repo, ingredient_repo, equipment_repo, image_generator, logger):
 @pytest.fixture
 async def client(service, logger, mcp_app):
     with patch("adapters.input.fastmcp.tools.recipe_tools.inject_tenant_uri", new=AsyncMock()):
-        with patch("adapters.input.fastmcp.tools.recipe_tools.require_auth_mcp", new=AsyncMock(return_value={"sub": "test-user"})):
-            with patch("adapters.input.fastmcp.tools.admin_tools.require_auth_mcp", new=AsyncMock(return_value={"sub": "test-user"})):
-                from infrastructure.purge_registry import PurgeRegistry
-                registry = PurgeRegistry()
-                registry.register("recipes", service.purge)
-                RecipeMCP(service, logger, mcp_app)
-                AdminMCP(registry, logger, mcp_app)
-                async with fastmcp.Client(mcp_app) as c:
-                    yield c
+        from infrastructure.purge_registry import PurgeRegistry
+        registry = PurgeRegistry()
+        registry.register("recipes", service.purge)
+        RecipeMCP(service, logger, mcp_app)
+        AdminMCP(registry, logger, mcp_app)
+        async with fastmcp.Client(mcp_app) as c:
+            yield c
 
 
 def _data(result) -> dict | list | None:

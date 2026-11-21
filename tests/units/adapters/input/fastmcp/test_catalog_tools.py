@@ -48,53 +48,45 @@ def mcp_app() -> fastmcp.FastMCP:
 @pytest.fixture
 async def client(logger, mcp_app: fastmcp.FastMCP):
     recipe_service = FakeRecipeService()
-    with patch("adapters.input.fastmcp.tools.equipment_tools.inject_tenant_uri", new=AsyncMock()):
-        with patch("adapters.input.fastmcp.tools.equipment_tools.require_auth_mcp", new=AsyncMock(return_value={"sub": "user"})):
-            with patch("adapters.input.fastmcp.tools.tag_tools.inject_tenant_uri", new=AsyncMock()):
-                with patch("adapters.input.fastmcp.tools.tag_tools.require_auth_mcp", new=AsyncMock(return_value={"sub": "user"})):
-                    with patch("adapters.input.fastmcp.tools.ingredient_setting_tools.inject_tenant_uri", new=AsyncMock()):
-                        with patch(
-                            "adapters.input.fastmcp.tools.ingredient_setting_tools.require_auth_mcp",
-                            new=AsyncMock(return_value={"sub": "user"}),
-                        ):
-                            with patch("adapters.input.fastmcp.tools.ingredient_tools.inject_tenant_uri", new=AsyncMock()):
-                                with patch(
-                                    "adapters.input.fastmcp.tools.ingredient_tools.require_auth_mcp",
-                                    new=AsyncMock(return_value={"sub": "user"}),
-                                ):
-                                    EquipmentMCP(
-                                        EquipmentService(InMemoryEquipmentRepository(), logger),
-                                        logger,
-                                        mcp_app,
-                                        recipe_service,
-                                    )
-                                    TagMCP(TagService(InMemoryTagRepository(), logger), logger, mcp_app, recipe_service)
-                                    ingredient_repository = InMemoryIngredientRepository()
-                                    ingredient_service = IngredientService(ingredient_repository, logger)
-                                    suggestion_service = IngredientEnrichmentSuggestionService(
-                                        InMemoryIngredientEnrichmentSuggestionRepository(),
-                                        ingredient_repository,
-                                        logger,
-                                    )
-                                    IngredientMCP(
-                                        ingredient_service,
-                                        logger,
-                                        mcp_app,
-                                        recipe_service,
-                                        suggestion_service,
-                                    )
-                                    IngredientGroupMCP(
-                                        IngredientGroupService(InMemoryIngredientGroupRepository(), logger),
-                                        logger,
-                                        mcp_app,
-                                    )
-                                    IngredientRayonMCP(
-                                        IngredientRayonService(InMemoryIngredientRayonRepository(), logger),
-                                        logger,
-                                        mcp_app,
-                                    )
-                                    async with fastmcp.Client(mcp_app) as fastmcp_client:
-                                        yield fastmcp_client
+    with (
+        patch("adapters.input.fastmcp.tools.equipment_tools.inject_tenant_uri", new=AsyncMock()),
+        patch("adapters.input.fastmcp.tools.tag_tools.inject_tenant_uri", new=AsyncMock()),
+        patch("adapters.input.fastmcp.tools.ingredient_setting_tools.inject_tenant_uri", new=AsyncMock()),
+        patch("adapters.input.fastmcp.tools.ingredient_tools.inject_tenant_uri", new=AsyncMock()),
+    ):
+        EquipmentMCP(
+            EquipmentService(InMemoryEquipmentRepository(), logger),
+            logger,
+            mcp_app,
+            recipe_service,
+        )
+        TagMCP(TagService(InMemoryTagRepository(), logger), logger, mcp_app, recipe_service)
+        ingredient_repository = InMemoryIngredientRepository()
+        ingredient_service = IngredientService(ingredient_repository, logger)
+        suggestion_service = IngredientEnrichmentSuggestionService(
+            InMemoryIngredientEnrichmentSuggestionRepository(),
+            ingredient_repository,
+            logger,
+        )
+        IngredientMCP(
+            ingredient_service,
+            logger,
+            mcp_app,
+            recipe_service,
+            suggestion_service,
+        )
+        IngredientGroupMCP(
+            IngredientGroupService(InMemoryIngredientGroupRepository(), logger),
+            logger,
+            mcp_app,
+        )
+        IngredientRayonMCP(
+            IngredientRayonService(InMemoryIngredientRayonRepository(), logger),
+            logger,
+            mcp_app,
+        )
+        async with fastmcp.Client(mcp_app) as fastmcp_client:
+            yield fastmcp_client
 
 
 def _data(result) -> dict | list | None:

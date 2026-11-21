@@ -1,7 +1,7 @@
 """MCP tools registration."""
 
 import fastmcp
-from adapters.input.fastmcp.tools import AdminMCP, EquipmentMCP, IngredientGroupMCP, IngredientMCP, IngredientRayonMCP, RecipeMCP, TagMCP
+from adapters.input.fastmcp.tools import AdminMCP, EquipmentMCP, IdentityMCP, IngredientGroupMCP, IngredientMCP, IngredientRayonMCP, RecipeMCP, TagMCP
 from arclith import Arclith
 from infrastructure.containers.equipment_container import build_equipment_service
 from infrastructure.containers.ingredient_group_container import build_ingredient_group_service
@@ -16,6 +16,7 @@ from infrastructure.purge_registry import purge_registry
 
 def register_tools(mcp: fastmcp.FastMCP, arclith: Arclith) -> None:
     """Register all MCP tools."""
+    IdentityMCP(mcp)
     group_service, group_logger = build_ingredient_group_service(arclith)
     rayon_service, rayon_logger = build_ingredient_rayon_service(arclith)
     ingredient_service, ingredient_logger = build_ingredient_service(

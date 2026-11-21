@@ -17,6 +17,7 @@ import sys
 import adapters.input.fastmcp.prompts as prompts_module
 import adapters.input.fastmcp.register as tools_module
 import adapters.input.fastmcp.resources as resources_module
+from adapters.input.fastmcp.authorization import build_mcp_auth_provider
 from adapters.input.fastapi.register import register_routers
 from arclith import Arclith
 from infrastructure.logging_setup import setup_logging
@@ -64,7 +65,10 @@ def _make_api_runner():
 
 
 def _make_mcp_runner(transport: str):
-    mcp = arclith.fastmcp(f"Rekipe-sample ({transport})")
+    auth = build_mcp_auth_provider()
+    if auth is None:
+        _logger.warning("MCP OAuth authentication disabled by REKIPE_AUTH_DISABLED")
+    mcp = arclith.fastmcp(f"Rekipe Recipe ({transport})", auth=auth)
     tools_module.register_tools(mcp, arclith)
     prompts_module.register_prompts(mcp, arclith)
     resources_module.register_resources(mcp, arclith)

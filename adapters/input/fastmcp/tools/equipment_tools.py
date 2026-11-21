@@ -5,7 +5,8 @@ import fastmcp
 from pydantic import Field
 from uuid6 import UUID
 
-from adapters.input.fastmcp.dependencies import inject_tenant_uri, require_auth_mcp
+from adapters.input.fastmcp.authorization import DELETE_SCOPE, WRITE_SCOPE, secure_tool
+from adapters.input.fastmcp.dependencies import inject_tenant_uri
 from adapters.input.schemas.equipment_schema import EquipmentSchema
 from adapters.input.schemas.recipe_schema import RecipeSchema
 from application.services.equipment_service import EquipmentService
@@ -38,20 +39,19 @@ class EquipmentMCP:
         recipe_service = self._recipe_service
         to_uuid6 = self._to_uuid6
 
-        @self._mcp.tool
+        @secure_tool(self._mcp, WRITE_SCOPE)
         async def create_equipment(
             name: Annotated[str, Field(description="Equipment name.", examples=["Four", "Saladier"])],
             description: Annotated[str | None, Field(default=None, description="Optional equipment details.")] = None,
             ctx: fastmcp.Context | None = None,
         ) -> dict:
             """Create a new equipment item."""
-            await require_auth_mcp(ctx)
             await inject_tenant_uri(ctx)
             result = await service.create(Equipment(name=name, description=description))
             logger.info("✅ Equipment created via MCP", uuid=str(result.uuid), name=result.name)
             return EquipmentSchema.model_validate(result).model_dump()
 
-        @self._mcp.tool
+        @secure_tool(self._mcp)
         async def get_equipment(
             uuid: Annotated[str, Field(description="UUID (UUIDv7) of the equipment.",
                                        examples=["01951234-5678-7abc-def0-123456789abc"])],
@@ -66,7 +66,7 @@ class EquipmentMCP:
             logger.info("✅ Equipment fetched via MCP", uuid=uuid, name=result.name)
             return EquipmentSchema.model_validate(result).model_dump()
 
-        @self._mcp.tool
+        @secure_tool(self._mcp, WRITE_SCOPE)
         async def update_equipment(
             uuid: Annotated[str, Field(description="UUID (UUIDv7) of the equipment.",
                                        examples=["01951234-5678-7abc-def0-123456789abc"])],
@@ -84,14 +84,13 @@ class EquipmentMCP:
             logger.info("✅ Equipment updated via MCP", uuid=uuid, name=result.name)
             return EquipmentSchema.model_validate(result).model_dump()
 
-        @self._mcp.tool
+        @secure_tool(self._mcp, DELETE_SCOPE)
         async def delete_equipment(
             uuid: Annotated[str, Field(description="UUID (UUIDv7) of the equipment.",
                                        examples=["01951234-5678-7abc-def0-123456789abc"])],
             ctx: fastmcp.Context | None = None,
         ) -> None:
             """Soft-delete equipment if it is not used by a recipe."""
-            await require_auth_mcp(ctx)
             await inject_tenant_uri(ctx)
             equipment_uuid = to_uuid6(StdUUID(uuid))
             if recipe_service is not None and await recipe_service.is_equipment_used(equipment_uuid):
@@ -99,7 +98,7 @@ class EquipmentMCP:
             await service.delete(equipment_uuid)
             logger.info("✅ Equipment deleted via MCP", uuid=uuid)
 
-        @self._mcp.tool
+        @secure_tool(self._mcp)
         async def list_equipment(
             name: Annotated[str | None, Field(
                 default=None,
@@ -114,7 +113,7 @@ class EquipmentMCP:
             logger.info("✅ Equipment listed via MCP", count=len(items), filter=name)
             return [EquipmentSchema.model_validate(item).model_dump() for item in items]
 
-        @self._mcp.tool
+        @secure_tool(self._mcp, WRITE_SCOPE)
         async def duplicate_equipment(
             uuid: Annotated[str, Field(description="UUID (UUIDv7) of the equipment.",
                                        examples=["01951234-5678-7abc-def0-123456789abc"])],
@@ -126,7 +125,7 @@ class EquipmentMCP:
             logger.info("✅ Equipment duplicated via MCP", source_uuid=uuid, new_uuid=str(result.uuid))
             return EquipmentSchema.model_validate(result).model_dump()
 
-        @self._mcp.tool
+        @secure_tool(self._mcp)
         async def list_recipes_for_equipment(
             uuid: Annotated[str, Field(description="UUID (UUIDv7) of the equipment.",
                                        examples=["01951234-5678-7abc-def0-123456789abc"])],
@@ -144,7 +143,7 @@ class EquipmentMCP:
             logger.info("✅ Equipment recipes listed via MCP", uuid=uuid, count=len(items))
             return [RecipeSchema.model_validate(item).model_dump(mode="json") for item in items]
 
-        @self._mcp.tool
+        @secure_tool(self._mcp)
         async def list_equipment_duplicates(ctx: fastmcp.Context | None = None) -> list[dict]:
             """List equipment duplicate groups detected by normalized name."""
             await inject_tenant_uri(ctx)
@@ -158,14 +157,13 @@ class EquipmentMCP:
                 for group in groups
             ]
 
-        @self._mcp.tool
+        @secure_tool(self._mcp, WRITE_SCOPE)
         async def merge_equipment_duplicates(
             target_uuid: Annotated[str, Field(description="Canonical equipment UUID to keep.")],
             duplicate_uuids: Annotated[list[str], Field(description="Duplicate equipment UUIDs to merge into the target.")],
             ctx: fastmcp.Context | None = None,
         ) -> dict:
             """Merge equipment duplicates into an explicit canonical target."""
-            await require_auth_mcp(ctx)
             await inject_tenant_uri(ctx)
             if recipe_service is None:
                 raise RuntimeError("Recipe service is not available")

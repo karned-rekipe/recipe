@@ -2,7 +2,8 @@ import fastmcp
 from pydantic import Field
 from uuid6 import UUID
 
-from adapters.input.fastmcp.dependencies import inject_tenant_uri, require_auth_mcp
+from adapters.input.fastmcp.authorization import DELETE_SCOPE, WRITE_SCOPE, secure_tool
+from adapters.input.fastmcp.dependencies import inject_tenant_uri
 from adapters.input.schemas.ingredient_enrichment_suggestion_schema import IngredientEnrichmentSuggestionSchema
 from adapters.input.schemas.ingredient_schema import IngredientSchema
 from adapters.input.schemas.recipe_schema import RecipeSchema
@@ -43,7 +44,7 @@ class IngredientMCP:
         suggestion_service = self._suggestion_service
         to_uuid6 = self._to_uuid6
 
-        @self._mcp.tool
+        @secure_tool(self._mcp, WRITE_SCOPE)
         async def create_ingredient(
                 name: Annotated[str, Field(
                     description="Ingredient name (e.g. 'Tomate', 'Farine de blé'). Will be normalized (spaces trimmed).",
@@ -63,7 +64,6 @@ class IngredientMCP:
             Returns the created ingredient with its generated UUID.
             Fields returned: uuid, name, rayon, group, green_score, unit, quantity, season_months, created_at, updated_at, version.
             """
-            await require_auth_mcp(ctx)
             await inject_tenant_uri(ctx)
             result = await service.create(Ingredient(
                 name=name,
@@ -79,7 +79,7 @@ class IngredientMCP:
             logger.info("✅ Ingredient created via MCP", uuid=str(result.uuid), name=result.name)
             return IngredientSchema.model_validate(result).model_dump()
 
-        @self._mcp.tool
+        @secure_tool(self._mcp)
         async def get_ingredient(
                 uuid: Annotated[str, Field(description="UUID (UUIDv7) of the ingredient to retrieve.",
                                            examples=["01951234-5678-7abc-def0-123456789abc"])],
@@ -97,7 +97,7 @@ class IngredientMCP:
             logger.info("✅ Ingredient fetched via MCP", uuid=uuid, name=result.name)
             return IngredientSchema.model_validate(result).model_dump()
 
-        @self._mcp.tool
+        @secure_tool(self._mcp, WRITE_SCOPE)
         async def update_ingredient(
                 uuid: Annotated[str, Field(description="UUID (UUIDv7) of the ingredient to update.",
                                            examples=["01951234-5678-7abc-def0-123456789abc"])],
@@ -133,7 +133,7 @@ class IngredientMCP:
             logger.info("✅ Ingredient updated via MCP", uuid=uuid, name=result.name)
             return IngredientSchema.model_validate(result).model_dump()
 
-        @self._mcp.tool
+        @secure_tool(self._mcp, DELETE_SCOPE)
         async def delete_ingredient(
                 uuid: Annotated[str, Field(description="UUID (UUIDv7) of the ingredient to delete.",
                                            examples=["01951234-5678-7abc-def0-123456789abc"])],
@@ -145,7 +145,6 @@ class IngredientMCP:
             It is retained until the purge retention period expires.
             Use `purge_ingredients` to permanently remove expired entries.
             """
-            await require_auth_mcp(ctx)
             await inject_tenant_uri(ctx)
             ingredient_uuid = to_uuid6(StdUUID(uuid))
             if recipe_service is not None and await recipe_service.is_ingredient_used(ingredient_uuid):
@@ -153,7 +152,7 @@ class IngredientMCP:
             await service.delete(ingredient_uuid)
             logger.info("✅ Ingredient deleted via MCP", uuid=uuid)
 
-        @self._mcp.tool
+        @secure_tool(self._mcp)
         async def list_ingredients(
                 name: Annotated[str | None, Field(default=None,
                                                   description="Optional partial name filter, case-insensitive. E.g. 'tom' will return 'Tomate'.",
@@ -170,13 +169,13 @@ class IngredientMCP:
             logger.info("✅ Ingredients listed via MCP", count=len(items), filter=name)
             return [IngredientSchema.model_validate(i).model_dump() for i in items]
 
-        @self._mcp.tool
+        @secure_tool(self._mcp)
         async def list_units(ctx: fastmcp.Context | None = None) -> list[dict]:
             """List reusable ingredient units and their categories."""
             await inject_tenant_uri(ctx)
             return await service.list_units()
 
-        @self._mcp.tool
+        @secure_tool(self._mcp)
         async def convert_ingredient_unit(
                 ingredient_uuid: Annotated[str, Field(description="Ingredient UUID.")],
                 quantity: Annotated[float, Field(description="Quantity to convert.", gt=0)],
@@ -202,7 +201,7 @@ class IngredientMCP:
                 "source": result["source"],
             }
 
-        @self._mcp.tool
+        @secure_tool(self._mcp, WRITE_SCOPE)
         async def duplicate_ingredient(
                 uuid: Annotated[str, Field(description="UUID (UUIDv7) of the ingredient to duplicate.",
                                            examples=["01951234-5678-7abc-def0-123456789abc"])],
@@ -218,7 +217,7 @@ class IngredientMCP:
             logger.info("✅ Ingredient duplicated via MCP", source_uuid=uuid, new_uuid=str(result.uuid))
             return IngredientSchema.model_validate(result).model_dump()
 
-        @self._mcp.tool
+        @secure_tool(self._mcp)
         async def list_recipes_for_ingredient(
                 uuid: Annotated[str, Field(description="UUID (UUIDv7) of the ingredient.",
                                            examples=["01951234-5678-7abc-def0-123456789abc"])],
@@ -236,7 +235,7 @@ class IngredientMCP:
             logger.info("✅ Ingredient recipes listed via MCP", uuid=uuid, count=len(items))
             return [RecipeSchema.model_validate(item).model_dump(mode="json") for item in items]
 
-        @self._mcp.tool
+        @secure_tool(self._mcp)
         async def list_ingredient_duplicates(ctx: fastmcp.Context | None = None) -> list[dict]:
             """List ingredient duplicate groups detected by normalized name."""
             await inject_tenant_uri(ctx)
@@ -250,14 +249,13 @@ class IngredientMCP:
                 for group in groups
             ]
 
-        @self._mcp.tool
+        @secure_tool(self._mcp, WRITE_SCOPE)
         async def merge_ingredient_duplicates(
                 target_uuid: Annotated[str, Field(description="Canonical ingredient UUID to keep.")],
                 duplicate_uuids: Annotated[list[str], Field(description="Duplicate ingredient UUIDs to merge into the target.")],
                 ctx: fastmcp.Context | None = None,
         ) -> dict:
             """Merge ingredient duplicates into an explicit canonical target."""
-            await require_auth_mcp(ctx)
             await inject_tenant_uri(ctx)
             if recipe_service is None:
                 raise RuntimeError("Recipe service is not available")
@@ -278,7 +276,7 @@ class IngredientMCP:
                 "deleted_count": result["deleted_count"],
             }
 
-        @self._mcp.tool
+        @secure_tool(self._mcp, WRITE_SCOPE)
         async def create_ingredient_enrichment_suggestion(
                 ingredient_uuid: Annotated[str, Field(description="Ingredient UUID targeted by the suggestion.")],
                 run_uuid: Annotated[str, Field(description="Agent run UUID that produced the suggestion.")],
@@ -304,7 +302,7 @@ class IngredientMCP:
             )
             return {"uuid": str(suggestion.uuid)}
 
-        @self._mcp.tool
+        @secure_tool(self._mcp)
         async def list_ingredient_enrichment_suggestions(
                 ingredient_uuid: Annotated[str, Field(description="Ingredient UUID.")],
                 ctx: fastmcp.Context | None = None,
@@ -316,7 +314,7 @@ class IngredientMCP:
             suggestions = await suggestion_service.find_by_ingredient_uuid(to_uuid6(StdUUID(ingredient_uuid)))
             return [IngredientEnrichmentSuggestionSchema.model_validate(item).model_dump(mode="json") for item in suggestions]
 
-        @self._mcp.tool
+        @secure_tool(self._mcp, WRITE_SCOPE)
         async def apply_ingredient_enrichment_suggestion(
                 ingredient_uuid: Annotated[str, Field(description="Ingredient UUID.")],
                 suggestion_uuid: Annotated[str, Field(description="Suggestion UUID.")],
@@ -325,7 +323,6 @@ class IngredientMCP:
                 ctx: fastmcp.Context | None = None,
         ) -> dict:
             """Apply selected fields from a V5 enrichment suggestion."""
-            await require_auth_mcp(ctx)
             await inject_tenant_uri(ctx)
             if suggestion_service is None:
                 raise RuntimeError("Ingredient enrichment suggestion service is not available")
@@ -337,7 +334,7 @@ class IngredientMCP:
             )
             return IngredientEnrichmentSuggestionSchema.model_validate(suggestion).model_dump(mode="json")
 
-        @self._mcp.tool
+        @secure_tool(self._mcp, WRITE_SCOPE)
         async def reject_ingredient_enrichment_suggestion(
                 ingredient_uuid: Annotated[str, Field(description="Ingredient UUID.")],
                 suggestion_uuid: Annotated[str, Field(description="Suggestion UUID.")],
@@ -345,7 +342,6 @@ class IngredientMCP:
                 ctx: fastmcp.Context | None = None,
         ) -> dict:
             """Reject a V5 enrichment suggestion."""
-            await require_auth_mcp(ctx)
             await inject_tenant_uri(ctx)
             if suggestion_service is None:
                 raise RuntimeError("Ingredient enrichment suggestion service is not available")
