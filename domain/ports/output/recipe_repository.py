@@ -1,4 +1,5 @@
 from abc import abstractmethod
+from datetime import datetime
 
 from arclith.domain.ports.repository import Repository
 from domain.models.recipe import Recipe, RecipeStatus
@@ -6,6 +7,35 @@ from uuid6 import UUID
 
 
 class RecipeRepository(Repository[Recipe]):
+    @abstractmethod
+    async def reserve_image_generation(
+        self,
+        recipe_uuid: UUID,
+        reservation_id: str,
+        expires_at: datetime,
+        *,
+        replace_existing: bool,
+    ) -> Recipe | None:
+        """Atomically reserve image generation and return the current recipe."""
+        pass
+
+    @abstractmethod
+    async def complete_image_generation(
+        self,
+        recipe_uuid: UUID,
+        reservation_id: str,
+        image_url: str,
+        *,
+        replace_existing: bool,
+    ) -> Recipe | None:
+        """Atomically attach the image when the caller still owns the reservation."""
+        pass
+
+    @abstractmethod
+    async def release_image_generation(self, recipe_uuid: UUID, reservation_id: str) -> None:
+        """Release an owned reservation after a failed or cancelled generation."""
+        pass
+
     @abstractmethod
     async def find_by_name(self, name: str) -> list[Recipe]:
         pass

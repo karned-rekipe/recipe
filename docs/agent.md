@@ -119,6 +119,11 @@ Par sécurité, le tool refuse de remplacer une image existante. Le paramètre
 `replace_existing=true` doit être fourni explicitement pour régénérer une
 image. Un `prompt` optionnel peut remplacer le prompt construit par `media`.
 
+Une réservation atomique temporaire est portée par MongoDB pendant la
+génération. Elle empêche deux appels REST/MCP concurrents de déclencher deux
+générations payantes et la finalisation ne modifie que `main_image`, afin de
+ne pas écraser une édition concurrente du reste de la recette.
+
 Le tool est une opération authentifiée susceptible de consommer un fournisseur
 payant. La connexion interne à `media` se configure sans secret :
 

@@ -23,6 +23,8 @@ from application.services.recipe_service import (
     RecipeComponentInUseError,
     RecipeReferenceError,
     RecipeImageAlreadyExistsError,
+    RecipeImageGenerationConflictError,
+    RecipeImageGenerationInProgressError,
     RecipeImageGenerationUnavailableError,
     RecipeService,
 )
@@ -153,7 +155,11 @@ class RecipeRouter:
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Recipe not found") from exc
-        except RecipeImageAlreadyExistsError as exc:
+        except (
+            RecipeImageAlreadyExistsError,
+            RecipeImageGenerationConflictError,
+            RecipeImageGenerationInProgressError,
+        ) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except RecipeImageGenerationUnavailableError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc

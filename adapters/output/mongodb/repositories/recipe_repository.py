@@ -1,5 +1,6 @@
 import re
 from collections.abc import Mapping, Sequence
+from datetime import datetime, timezone
 from typing import Any
 from typing import cast
 
@@ -9,6 +10,7 @@ from arclith.domain.ports.logger import Logger
 from domain.models.recipe import Recipe, RecipeStatus
 from domain.models.recipe_filters import RecipeFilters
 from domain.ports.output.recipe_repository import RecipeRepository
+from pymongo import ReturnDocument
 from uuid6 import UUID
 
 
@@ -22,6 +24,67 @@ class MongoDBRecipeRepository(MongoDBRepository[Recipe], RecipeRepository):
         if doc.get("legacy_id") is None:
             doc.pop("legacy_id", None)
         return doc
+
+    async def reserve_image_generation(
+        self,
+        recipe_uuid: UUID,
+        reservation_id: str,
+        expires_at: datetime,
+        *,
+        replace_existing: bool,
+    ) -> Recipe | None:
+        now = datetime.now(timezone.utc)
+        async with self._collection() as col:
+            doc = await col.find_one_and_update(
+                _image_reservation_filter(recipe_uuid, now, replace_existing=replace_existing),
+                {
+                    "$set": {
+                        "image_generation_reservation": {
+                            "id": reservation_id,
+                            "expires_at": expires_at,
+                        }
+                    }
+                },
+                return_document=ReturnDocument.AFTER,
+            )
+        return self._from_doc(doc) if doc is not None else None
+
+    async def complete_image_generation(
+        self,
+        recipe_uuid: UUID,
+        reservation_id: str,
+        image_url: str,
+        *,
+        replace_existing: bool,
+    ) -> Recipe | None:
+        async with self._collection() as col:
+            doc = await col.find_one_and_update(
+                _image_completion_filter(
+                    recipe_uuid,
+                    reservation_id,
+                    replace_existing=replace_existing,
+                ),
+                {
+                    "$set": {
+                        "main_image": image_url,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                    "$inc": {"version": 1},
+                    "$unset": {"image_generation_reservation": ""},
+                },
+                return_document=ReturnDocument.AFTER,
+            )
+        return self._from_doc(doc) if doc is not None else None
+
+    async def release_image_generation(self, recipe_uuid: UUID, reservation_id: str) -> None:
+        async with self._collection() as col:
+            await col.update_one(
+                {
+                    "_id": str(recipe_uuid),
+                    "image_generation_reservation.id": reservation_id,
+                },
+                {"$unset": {"image_generation_reservation": ""}},
+            )
 
     async def find_by_name(self, name: str) -> list[Recipe]:
         async with self._collection() as col:
@@ -153,6 +216,41 @@ def _recipe_filter_match(filters: RecipeFilters) -> dict[str, Any]:
     match: dict[str, Any] = {"deleted_at": None}
     for criterion in _mongo_filter_criteria(filters):
         match.update(criterion)
+    return match
+
+
+def _image_reservation_filter(
+    recipe_uuid: UUID,
+    now: datetime,
+    *,
+    replace_existing: bool,
+) -> dict[str, Any]:
+    match: dict[str, Any] = {
+        "_id": str(recipe_uuid),
+        "deleted_at": None,
+        "$or": [
+            {"image_generation_reservation": {"$exists": False}},
+            {"image_generation_reservation.expires_at": {"$lte": now}},
+        ],
+    }
+    if not replace_existing:
+        match["main_image"] = {"$not": {"$regex": r"\S"}}
+    return match
+
+
+def _image_completion_filter(
+    recipe_uuid: UUID,
+    reservation_id: str,
+    *,
+    replace_existing: bool,
+) -> dict[str, Any]:
+    match: dict[str, Any] = {
+        "_id": str(recipe_uuid),
+        "deleted_at": None,
+        "image_generation_reservation.id": reservation_id,
+    }
+    if not replace_existing:
+        match["main_image"] = {"$not": {"$regex": r"\S"}}
     return match
 
 

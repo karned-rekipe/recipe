@@ -1,5 +1,7 @@
 from collections.abc import Iterable
+from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
+from uuid import uuid4
 
 from application.use_cases import FindByNameUseCase
 from arclith import BaseService, Logger
@@ -47,6 +49,14 @@ class RecipeImageAlreadyExistsError(ValueError):
 
 class RecipeImageGenerationUnavailableError(RuntimeError):
     """Raised when no recipe image generator is configured."""
+
+
+class RecipeImageGenerationInProgressError(RuntimeError):
+    """Raised when another request already generates an image for the recipe."""
+
+
+class RecipeImageGenerationConflictError(RuntimeError):
+    """Raised when the image reservation expires or the recipe changes."""
 
 
 class _ReadableRepository(Protocol):
@@ -107,29 +117,94 @@ class RecipeService(BaseService[Recipe]):
         prompt: str | None = None,
         replace_existing: bool = False,
     ) -> tuple[Recipe, GeneratedRecipeImage]:
-        if self._image_generator is None:
+        image_generator = self._image_generator
+        if image_generator is None:
             raise RecipeImageGenerationUnavailableError("Recipe image generation is not configured")
 
-        recipe = await self.read(uuid)
+        reservation_id = str(uuid4())
+        recipe = await self._reserve_main_image_generation(
+            uuid,
+            reservation_id,
+            replace_existing=replace_existing,
+        )
+        try:
+            generated = await image_generator.generate(
+                recipe_uuid=str(recipe.uuid),
+                recipe_name=recipe.name,
+                ingredients=await self._image_ingredient_names(recipe),
+                prompt=prompt,
+            )
+            updated = await self._complete_main_image_generation(
+                uuid,
+                reservation_id,
+                generated.image.url,
+                replace_existing=replace_existing,
+            )
+            return updated, generated
+        except BaseException:
+            await self._recipe_repo.release_image_generation(uuid, reservation_id)
+            raise
+
+    async def _reserve_main_image_generation(
+        self,
+        uuid: UUID,
+        reservation_id: str,
+        *,
+        replace_existing: bool,
+    ) -> Recipe:
+        current = await self.read(uuid)
+        self._ensure_image_generation_allowed(current, uuid, replace_existing=replace_existing)
+        recipe = await self._recipe_repo.reserve_image_generation(
+            uuid,
+            reservation_id,
+            datetime.now(timezone.utc) + timedelta(minutes=5),
+            replace_existing=replace_existing,
+        )
+        if recipe is not None:
+            return recipe
+        latest = await self.read(uuid)
+        self._ensure_image_generation_allowed(latest, uuid, replace_existing=replace_existing)
+        raise RecipeImageGenerationInProgressError("Recipe image generation is already in progress")
+
+    @staticmethod
+    def _ensure_image_generation_allowed(
+        recipe: Recipe | None,
+        uuid: UUID,
+        *,
+        replace_existing: bool,
+    ) -> None:
         if recipe is None:
             raise KeyError(f"Recipe with uuid {uuid} not found")
         if recipe.main_image and recipe.main_image.strip() and not replace_existing:
             raise RecipeImageAlreadyExistsError("Recipe already has a main image")
 
+    async def _image_ingredient_names(self, recipe: Recipe) -> list[str]:
         hydrated = await self.hydrate_recipe(recipe)
-        ingredient_names = [
+        return [
             ingredient["name"]
             for ingredient in hydrated["ingredients"]
             if isinstance(ingredient.get("name"), str) and ingredient["name"].strip()
         ]
-        generated = await self._image_generator.generate(
-            recipe_uuid=str(recipe.uuid),
-            recipe_name=recipe.name,
-            ingredients=ingredient_names,
-            prompt=prompt,
+
+    async def _complete_main_image_generation(
+        self,
+        uuid: UUID,
+        reservation_id: str,
+        image_url: str,
+        *,
+        replace_existing: bool,
+    ) -> Recipe:
+        updated = await self._recipe_repo.complete_image_generation(
+            uuid,
+            reservation_id,
+            image_url,
+            replace_existing=replace_existing,
         )
-        updated = await self.update(recipe.model_copy(update={"main_image": generated.image.url}))
-        return updated, generated
+        if updated is None:
+            raise RecipeImageGenerationConflictError(
+                "Recipe changed while its image was being generated"
+            )
+        return updated
 
     async def find_page_filtered(
         self,

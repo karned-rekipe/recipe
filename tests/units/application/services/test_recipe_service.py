@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
@@ -7,6 +8,7 @@ from application.services.recipe_service import (
     RecipeComponentCycleError,
     RecipeComponentInUseError,
     RecipeImageAlreadyExistsError,
+    RecipeImageGenerationInProgressError,
     RecipeImageGenerationUnavailableError,
     RecipeService,
 )
@@ -107,6 +109,74 @@ async def test_generate_main_image_persists_generated_url(repo, logger):
 
     assert updated.main_image == generated.image.url
     assert (await service.read(recipe.uuid)).main_image == generated.image.url
+
+
+async def test_generate_main_image_reserves_recipe_against_duplicate_requests(repo, logger):
+    started = asyncio.Event()
+    finish = asyncio.Event()
+    generated = GeneratedRecipeImage.model_validate({
+        "image": {
+            "bucket": "recipes",
+            "key": "recipes/soupe.png",
+            "url": "/api/media/v1/buckets/recipes/objects/recipes/soupe.png",
+            "content_type": "image/png",
+            "size_bytes": 42,
+        },
+        "provider": "test",
+    })
+
+    async def generate_once(**_kwargs):
+        started.set()
+        await finish.wait()
+        return generated
+
+    generator = AsyncMock(spec=RecipeImageGenerator)
+    generator.generate.side_effect = generate_once
+    service = RecipeService(repo, logger, image_generator=generator)
+    recipe = await service.create(Recipe(name="Soupe"))
+
+    first = asyncio.create_task(service.generate_main_image(recipe.uuid))
+    await started.wait()
+    with pytest.raises(RecipeImageGenerationInProgressError):
+        await service.generate_main_image(recipe.uuid)
+    finish.set()
+    await first
+
+    assert generator.generate.await_count == 1
+
+
+async def test_generate_main_image_preserves_concurrent_recipe_edits(repo, logger):
+    started = asyncio.Event()
+    finish = asyncio.Event()
+    generated = GeneratedRecipeImage.model_validate({
+        "image": {
+            "bucket": "recipes",
+            "key": "recipes/soupe.png",
+            "url": "/api/media/v1/buckets/recipes/objects/recipes/soupe.png",
+            "content_type": "image/png",
+            "size_bytes": 42,
+        },
+        "provider": "test",
+    })
+
+    async def generate_after_edit(**_kwargs):
+        started.set()
+        await finish.wait()
+        return generated
+
+    generator = AsyncMock(spec=RecipeImageGenerator)
+    generator.generate.side_effect = generate_after_edit
+    service = RecipeService(repo, logger, image_generator=generator)
+    recipe = await service.create(Recipe(name="Soupe"))
+
+    generation = asyncio.create_task(service.generate_main_image(recipe.uuid))
+    await started.wait()
+    await service.update(recipe.model_copy(update={"name": "Soupe paysanne"}))
+    finish.set()
+    updated, _ = await generation
+
+    assert updated.name == "Soupe paysanne"
+    assert updated.main_image == generated.image.url
 
 
 async def test_find_by_name_no_results(service):
