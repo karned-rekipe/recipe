@@ -68,14 +68,10 @@ class KeycloakJWTVerifier(JWTVerifier):
             return None
         if not _valid_future_numeric_date(claims.get("iat"), now + _CLOCK_SKEW_SECONDS):
             return None
-        if not isinstance(claims.get("sub"), str) or not claims["sub"].strip():
+        if not _valid_subject(claims.get("sub")):
             return None
-
-        if self.required_role:
-            realm_access = claims.get("realm_access")
-            roles = realm_access.get("roles", []) if isinstance(realm_access, dict) else []
-            if not isinstance(roles, list) or self.required_role not in roles:
-                return None
+        if not _has_required_realm_role(claims, self.required_role):
+            return None
 
         return access_token
 
@@ -96,6 +92,18 @@ def _valid_expiration_numeric_date(value: Any, now: int) -> bool:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return False
     return value > now
+
+
+def _valid_subject(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _has_required_realm_role(claims: dict[str, Any], required_role: str | None) -> bool:
+    if required_role is None:
+        return True
+    realm_access = claims.get("realm_access")
+    roles = realm_access.get("roles", []) if isinstance(realm_access, dict) else []
+    return isinstance(roles, list) and required_role in roles
 
 
 def build_mcp_auth_provider() -> RemoteAuthProvider | None:
