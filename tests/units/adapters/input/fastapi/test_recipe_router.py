@@ -1,3 +1,5 @@
+from unittest.mock import AsyncMock
+
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -8,7 +10,9 @@ from adapters.output.memory.repositories.equipment_repository import InMemoryEqu
 from adapters.output.memory.repositories.ingredient_repository import InMemoryIngredientRepository
 from application.services.recipe_service import RecipeService
 from domain.models.equipment import Equipment
+from domain.models.generated_recipe_image import GeneratedRecipeImage
 from domain.models.ingredient import Ingredient
+from domain.ports.output.recipe_image_generator import RecipeImageGenerator
 from infrastructure.purge_registry import PurgeRegistry
 from uuid6 import UUID
 
@@ -71,12 +75,29 @@ def equipment_repo():
 
 
 @pytest.fixture
-def service(repo, ingredient_repo, equipment_repo, logger):
+def image_generator():
+    generator = AsyncMock(spec=RecipeImageGenerator)
+    generator.generate.return_value = GeneratedRecipeImage.model_validate({
+        "image": {
+            "bucket": "recipes",
+            "key": "recipes/generated.png",
+            "url": "/api/media/v1/buckets/recipes/objects/recipes/generated.png",
+            "content_type": "image/png",
+            "size_bytes": 1234,
+        },
+        "provider": "test",
+    })
+    return generator
+
+
+@pytest.fixture
+def service(repo, ingredient_repo, equipment_repo, image_generator, logger):
     return RecipeService(
         repo,
         logger,
         ingredient_repository=ingredient_repo,
         equipment_repository=equipment_repo,
+        image_generator=image_generator,
     )
 
 
@@ -107,6 +128,46 @@ async def created(client):
 async def test_create_returns_201(client):
     response = await client.post("/v1/recipes/", json=_complete_payload())
     assert response.status_code == 201
+
+
+async def test_generate_recipe_image_uses_recipe_facade(client, image_generator):
+    created = await client.post("/v1/recipes/", json=_complete_payload(main_image=None))
+    uuid = created.json()["data"]["uuid"]
+
+    response = await client.post(
+        f"/v1/recipes/{uuid}/main-image",
+        json={"prompt": "Photo culinaire lumineuse"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["provider"] == "test"
+    assert data["recipe"]["main_image"] == data["image"]["url"]
+    image_generator.generate.assert_awaited_once_with(
+        recipe_uuid=uuid,
+        recipe_name="Farine",
+        ingredients=["Farine de ble"],
+        prompt="Photo culinaire lumineuse",
+    )
+
+
+async def test_generate_recipe_image_refuses_implicit_replacement(client):
+    created = await client.post("/v1/recipes/", json=_complete_payload())
+    uuid = created.json()["data"]["uuid"]
+
+    response = await client.post(f"/v1/recipes/{uuid}/main-image", json={})
+
+    assert response.status_code == 409
+
+
+async def test_generate_recipe_image_maps_media_failure(client, image_generator):
+    image_generator.generate.side_effect = RuntimeError("Media service is unavailable")
+    created = await client.post("/v1/recipes/", json=_complete_payload(main_image=None))
+    uuid = created.json()["data"]["uuid"]
+
+    response = await client.post(f"/v1/recipes/{uuid}/main-image", json={})
+
+    assert response.status_code == 502
 
 
 async def test_require_auth_can_be_disabled_for_local_dev(monkeypatch):

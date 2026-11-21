@@ -84,11 +84,12 @@ cd /Users/killian/Karned/repos/Rekipe/_sample
 MODE=all uv run --frozen python main.py
 ```
 
-Démarre simultanément :
+Démarre simultanément deux processus isolés afin que les clients MongoDB
+de l'API et du MCP restent attachés à leur propre boucle d'événements :
 
 - **API REST** : http://127.0.0.1:8000
 - **MCP HTTP** : http://127.0.0.1:8001
-- **Probes** : http://127.0.0.1:9000 (health, ready, metrics)
+- **Probes API** : http://127.0.0.1:9000 (health, ready, metrics)
 
 ## 🧪 Tester l'authentification
 
@@ -172,4 +173,3 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/recipe/v1/
 - Configuration complète : `config/`
 - Décisions : `framework/docs/decisions.md`
 - Auth JWT : `framework/docs/auth.md`
-

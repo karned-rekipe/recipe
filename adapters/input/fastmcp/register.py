@@ -1,9 +1,6 @@
 """MCP tools registration."""
 
-import os
-
 import fastmcp
-from adapters.output.media import MediaRecipeImageGenerator
 from adapters.input.fastmcp.tools import AdminMCP, EquipmentMCP, IngredientGroupMCP, IngredientMCP, IngredientRayonMCP, RecipeMCP, TagMCP
 from arclith import Arclith
 from infrastructure.containers.equipment_container import build_equipment_service
@@ -12,6 +9,7 @@ from infrastructure.containers.ingredient_container import build_ingredient_serv
 from infrastructure.containers.ingredient_enrichment_suggestion_container import build_ingredient_enrichment_suggestion_service
 from infrastructure.containers.ingredient_rayon_container import build_ingredient_rayon_service
 from infrastructure.containers.recipe_container import build_recipe_service
+from infrastructure.containers.recipe_image_generator_container import build_recipe_image_generator
 from infrastructure.containers.tag_container import build_tag_service
 from infrastructure.purge_registry import purge_registry
 
@@ -34,10 +32,7 @@ def register_tools(mcp: fastmcp.FastMCP, arclith: Arclith) -> None:
         tag_repository=tag_service.repository,
         group_repository=group_service.repository,
         rayon_repository=rayon_service.repository,
-        image_generator=MediaRecipeImageGenerator(
-            os.getenv("RECIPE_MEDIA_API_BASE_URL", "http://127.0.0.1:8030"),
-            timeout_seconds=float(os.getenv("RECIPE_MEDIA_API_TIMEOUT_SECONDS", "120")),
-        ),
+        image_generator=build_recipe_image_generator(),
     )
     suggestion_service, _ = build_ingredient_enrichment_suggestion_service(
         arclith,

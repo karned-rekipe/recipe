@@ -100,6 +100,21 @@ générer et stocker l'image, puis persiste l'URL obtenue dans `main_image`. Le
 client MCP ne doit donc pas appeler `media` directement. La réponse contient
 la recette mise à jour, les métadonnées de l'image et le fournisseur utilisé.
 
+La même façade est disponible pour les clients REST authentifiés :
+
+```http
+POST /v1/recipes/{uuid}/main-image
+Content-Type: application/json
+
+{
+  "prompt": null,
+  "replace_existing": false
+}
+```
+
+Le frontend appelle cette route de `recipe` ; il ne doit ni orchestrer `media`
+directement, ni persister lui-même l'URL retournée.
+
 Par sécurité, le tool refuse de remplacer une image existante. Le paramètre
 `replace_existing=true` doit être fourni explicitement pour régénérer une
 image. Un `prompt` optionnel peut remplacer le prompt construit par `media`.
