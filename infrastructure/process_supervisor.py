@@ -5,7 +5,7 @@ import signal
 import subprocess
 import sys
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from types import FrameType
 from typing import Protocol
@@ -23,6 +23,9 @@ class ChildProcess(Protocol):
 
 class ProcessFactory(Protocol):
     def __call__(self, command: list[str], *, env: Mapping[str, str]) -> ChildProcess: ...
+
+
+SignalHandler = int | Callable[[int, FrameType | None], object] | None
 
 
 def transport_environment(base: Mapping[str, str], mode: str) -> dict[str, str]:
@@ -77,24 +80,39 @@ def run_isolated_transports(
             )
 
         while received_signal is None:
-            for child in children:
-                exit_code = child.poll()
-                if exit_code is not None:
-                    stop_children()
-                    return exit_code
+            exit_code = _first_exit_code(children)
+            if exit_code is not None:
+                stop_children()
+                return exit_code
             time.sleep(poll_interval)
         return 128 + received_signal
     finally:
         stop_children()
-        for child in children:
-            try:
-                child.wait(timeout=termination_timeout)
-            except subprocess.TimeoutExpired:
-                child.kill()
-                child.wait()
-        for signum, handler in previous_handlers.items():
-            signal.signal(signum, handler)
+        _wait_for_children(children, termination_timeout)
+        _restore_signal_handlers(previous_handlers)
 
 
 def _start_process(command: list[str], *, env: Mapping[str, str]) -> ChildProcess:
     return subprocess.Popen(command, env=env)
+
+
+def _first_exit_code(children: list[ChildProcess]) -> int | None:
+    for child in children:
+        exit_code = child.poll()
+        if exit_code is not None:
+            return exit_code
+    return None
+
+
+def _wait_for_children(children: list[ChildProcess], timeout: float) -> None:
+    for child in children:
+        try:
+            child.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait()
+
+
+def _restore_signal_handlers(previous_handlers: Mapping[signal.Signals, SignalHandler]) -> None:
+    for signum, handler in previous_handlers.items():
+        signal.signal(signum, handler)
