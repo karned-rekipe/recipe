@@ -62,6 +62,8 @@ class KeycloakJWTVerifier(JWTVerifier):
 
         claims = access_token.claims
         now = int(time.time())
+        if not _valid_expiration_numeric_date(claims.get("exp"), now):
+            return None
         if not _valid_future_numeric_date(claims.get("nbf"), now + _CLOCK_SKEW_SECONDS):
             return None
         if not _valid_future_numeric_date(claims.get("iat"), now + _CLOCK_SKEW_SECONDS):
@@ -88,6 +90,14 @@ def _valid_future_numeric_date(value: Any, latest: int) -> bool:
     return value <= latest
 
 
+def _valid_expiration_numeric_date(value: Any, now: int) -> bool:
+    """Require a numeric expiration strictly later than the current time."""
+
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return value > now
+
+
 def build_mcp_auth_provider() -> RemoteAuthProvider | None:
     """Build the transport-level OAuth provider used by the HTTP MCP server."""
 
@@ -111,7 +121,9 @@ def build_mcp_auth_provider() -> RemoteAuthProvider | None:
         "REKIPE_MCP_AUTH_JWKS_URI",
         f"{keycloak.url.rstrip('/')}/realms/{keycloak.realm}/protocol/openid-connect/certs",
     )
-    required_role = os.getenv("REKIPE_MCP_AUTH_REQUIRED_ROLE", "rekipe:mcp-access").strip() or None
+    required_role = os.getenv("REKIPE_MCP_AUTH_REQUIRED_ROLE", "rekipe:mcp-access").strip()
+    if not required_role:
+        raise RuntimeError("REKIPE_MCP_AUTH_REQUIRED_ROLE ne peut pas être vide")
     resource_url = f"{public_base_url}/mcp"
 
     verifier = KeycloakJWTVerifier(

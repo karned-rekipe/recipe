@@ -44,7 +44,7 @@ def signing_keys() -> tuple[bytes, bytes]:
     return private_pem, public_pem
 
 
-def _token(private_key: bytes, **overrides) -> str:
+def _token(private_key: bytes, *, drop_claims: tuple[str, ...] = (), **overrides) -> str:
     now = int(time.time())
     claims = {
         "iss": ISSUER,
@@ -58,6 +58,8 @@ def _token(private_key: bytes, **overrides) -> str:
         "realm_access": {"roles": ["rekipe:mcp-access"]},
     }
     claims.update(overrides)
+    for claim in drop_claims:
+        claims.pop(claim, None)
     encoded = jwt.encode({"alg": "RS256"}, claims, private_key)
     return encoded.decode()
 
@@ -93,6 +95,8 @@ async def test_keycloak_verifier_accepts_bound_authorized_token(signing_keys) ->
         {"nbf": int(time.time()) + 3600},
         {"iat": int(time.time()) + 3600},
         {"exp": int(time.time()) - 60},
+        {"exp": None},
+        {"exp": 0},
         {"sub": ""},
     ],
 )
@@ -100,6 +104,16 @@ async def test_keycloak_verifier_rejects_unbound_or_unauthorized_token(signing_k
     private_key, public_key = signing_keys
 
     access_token = await _verifier(public_key).verify_token(_token(private_key, **overrides))
+
+    assert access_token is None
+
+
+async def test_keycloak_verifier_rejects_token_without_expiration(signing_keys) -> None:
+    private_key, public_key = signing_keys
+
+    access_token = await _verifier(public_key).verify_token(
+        _token(private_key, drop_claims=("exp",)),
+    )
 
     assert access_token is None
 
@@ -131,6 +145,20 @@ def test_build_auth_provider_can_only_be_disabled_explicitly(monkeypatch) -> Non
     monkeypatch.setenv("REKIPE_AUTH_DISABLED", "true")
 
     assert build_mcp_auth_provider() is None
+
+
+def test_build_auth_provider_rejects_blank_required_role(monkeypatch) -> None:
+    config = MagicMock()
+    config.keycloak.url = "http://keycloak.keycloak.svc.cluster.local"
+    config.keycloak.realm = "rekipe"
+    monkeypatch.delenv("REKIPE_AUTH_DISABLED", raising=False)
+    monkeypatch.setenv("REKIPE_MCP_AUTH_REQUIRED_ROLE", "   ")
+
+    with (
+        patch("adapters.input.fastmcp.authorization.load_config_dir", return_value=config),
+        pytest.raises(RuntimeError, match="ne peut pas être vide"),
+    ):
+        build_mcp_auth_provider()
 
 
 class _StaticTokenVerifier(TokenVerifier):
