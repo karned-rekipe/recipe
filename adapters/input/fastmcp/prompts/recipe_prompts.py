@@ -1,5 +1,6 @@
 import fastmcp
 
+from adapters.input.fastmcp.authorization import secure_prompt
 from adapters.input.fastmcp.dependencies import inject_tenant_uri
 from application.services.recipe_service import RecipeService
 from arclith.domain.ports.logger import Logger
@@ -17,7 +18,7 @@ class RecipePrompts:
     def _register_prompts(self) -> None:
         service = self._service
 
-        @self._mcp.prompt
+        @secure_prompt(self._mcp)
         def check_duplicate(recipe_name: str) -> str:
             """Check for duplicates before creating a new recipe.
 
@@ -31,7 +32,7 @@ class RecipePrompts:
                 "If a match is found, suggest using the existing one instead of creating a duplicate."
             )
 
-        @self._mcp.prompt
+        @secure_prompt(self._mcp)
         async def explore_recipes(ctx: fastmcp.Context) -> str:
             """Explore and discover available recipes.
 
@@ -52,7 +53,7 @@ class RecipePrompts:
                 "or suggest which ones to use for a given dish."
             )
 
-        @self._mcp.prompt
+        @secure_prompt(self._mcp)
         def mcp_help() -> str:
             """Overview of all MCP capabilities exposed by this server.
 

@@ -4,6 +4,7 @@ from uuid import UUID as StdUUID
 import fastmcp
 from uuid6 import UUID
 
+from adapters.input.fastmcp.authorization import secure_resource
 from adapters.input.fastmcp.dependencies import inject_tenant_uri
 from adapters.input.schemas.recipe_schema import RecipeSchema
 from application.services.recipe_service import RecipeService
@@ -29,7 +30,7 @@ class RecipeResources:
         logger = self._logger
         to_uuid6 = self._to_uuid6
 
-        @self._mcp.resource("recipes://sample")
+        @secure_resource(self._mcp, "recipes://sample")
         async def sample_recipes_resource(ctx: fastmcp.Context) -> str:
             """First 5 recipes ordered by creation date — quick dataset preview."""
             await inject_tenant_uri(ctx)
@@ -37,7 +38,7 @@ class RecipeResources:
             sample = sorted(items, key=lambda i: i.created_at)[:_SAMPLE_LIMIT]
             return json.dumps([RecipeSchema.model_validate(i).model_dump(mode="json") for i in sample])
 
-        @self._mcp.resource("recipes://recent")
+        @secure_resource(self._mcp, "recipes://recent")
         async def recent_recipes_resource(ctx: fastmcp.Context) -> str:
             """Last 10 recipes by creation date, newest first."""
             await inject_tenant_uri(ctx)
@@ -45,7 +46,7 @@ class RecipeResources:
             recent = sorted(items, key=lambda i: i.created_at, reverse=True)[:_RECENT_LIMIT]
             return json.dumps([RecipeSchema.model_validate(i).model_dump(mode="json") for i in recent])
 
-        @self._mcp.resource("recipe://{uuid}")
+        @secure_resource(self._mcp, "recipe://{uuid}")
         async def get_recipe_resource(uuid: str, ctx: fastmcp.Context) -> str:
             """A single recipe by UUID."""
             await inject_tenant_uri(ctx)
@@ -54,4 +55,3 @@ class RecipeResources:
                 logger.warning("⚠️ Recipe not found via MCP resource", uuid=uuid)
                 return json.dumps(None)
             return json.dumps(RecipeSchema.model_validate(result).model_dump(mode="json"))
-

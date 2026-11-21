@@ -1,6 +1,6 @@
 import fastmcp
 
-from adapters.input.fastmcp.dependencies import require_auth_mcp
+from adapters.input.fastmcp.authorization import ADMIN_SCOPE, secure_tool
 from arclith.domain.ports.logger import Logger
 from infrastructure.purge_registry import PurgeRegistry
 
@@ -15,7 +15,7 @@ class AdminMCP:
         registry = self._registry
         logger = self._logger
 
-        @mcp.tool
+        @secure_tool(mcp, ADMIN_SCOPE)
         async def purge_all(ctx: fastmcp.Context | None = None) -> dict:
             """Permanently delete all soft-deleted entities across all collections.
 
@@ -23,9 +23,7 @@ class AdminMCP:
             Returns {"purged": {"recipes": N, ...}, "total": N}.
             This operation is irreversible.
             """
-            await require_auth_mcp(ctx)
             results = await registry.purge_all()
             total = sum(results.values())
             logger.info("✅ Global purge via MCP", total=total, breakdown=results)
             return {"purged": results, "total": total}
-

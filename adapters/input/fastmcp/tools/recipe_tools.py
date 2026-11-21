@@ -5,7 +5,13 @@ import fastmcp
 from pydantic import Field
 from uuid6 import UUID
 
-from adapters.input.fastmcp.dependencies import inject_tenant_uri, require_auth_mcp
+from adapters.input.fastmcp.authorization import (
+    DELETE_SCOPE,
+    IMAGE_GENERATE_SCOPE,
+    WRITE_SCOPE,
+    secure_tool,
+)
+from adapters.input.fastmcp.dependencies import inject_tenant_uri
 from adapters.input.schemas.recipe_schema import (
     RecipeCreateSchema,
     RecipePatchSchema,
@@ -36,7 +42,7 @@ class RecipeMCP:
         logger = self._logger
         to_uuid6 = self._to_uuid6
 
-        @self._mcp.tool
+        @secure_tool(self._mcp, WRITE_SCOPE)
         async def create_recipe(
             payload: Annotated[
                 dict,
@@ -67,14 +73,13 @@ class RecipeMCP:
             The payload is the same complete aggregate expected by the HTTP API.
             Returns the created recipe aggregate.
             """
-            await require_auth_mcp(ctx)
             await inject_tenant_uri(ctx)
             validated = RecipeCreateSchema.model_validate(payload)
             result = await service.create(recipe_create_payload_to_domain(validated))
             logger.info("✅ Recipe created via MCP", uuid=str(result.uuid), name=result.name)
             return RecipeSchema.model_validate(await service.hydrate_recipe(result)).model_dump(mode="json")
 
-        @self._mcp.tool
+        @secure_tool(self._mcp)
         async def get_recipe(
             uuid: Annotated[
                 str,
@@ -94,7 +99,7 @@ class RecipeMCP:
             logger.info("✅ Recipe fetched via MCP", uuid=uuid, name=result.name)
             return RecipeSchema.model_validate(await service.hydrate_recipe(result)).model_dump(mode="json")
 
-        @self._mcp.tool
+        @secure_tool(self._mcp, WRITE_SCOPE)
         async def update_recipe(
             uuid: Annotated[
                 str,
@@ -122,7 +127,7 @@ class RecipeMCP:
             logger.info("✅ Recipe updated via MCP", uuid=uuid, name=result.name)
             return RecipeSchema.model_validate(await service.hydrate_recipe(result)).model_dump(mode="json")
 
-        @self._mcp.tool
+        @secure_tool(self._mcp, WRITE_SCOPE)
         async def patch_recipe(
             uuid: Annotated[
                 str,
@@ -150,7 +155,7 @@ class RecipeMCP:
             logger.info("✅ Recipe patched via MCP", uuid=uuid, name=result.name)
             return RecipeSchema.model_validate(await service.hydrate_recipe(result)).model_dump(mode="json")
 
-        @self._mcp.tool
+        @secure_tool(self._mcp, IMAGE_GENERATE_SCOPE)
         async def generate_recipe_image(
             uuid: Annotated[
                 str,
@@ -177,7 +182,6 @@ class RecipeMCP:
             ctx: fastmcp.Context | None = None,
         ) -> dict:
             """Generate, store, and attach a recipe main image through the media service."""
-            await require_auth_mcp(ctx)
             await inject_tenant_uri(ctx)
             recipe, generated = await service.generate_main_image(
                 to_uuid6(StdUUID(uuid)),
@@ -196,7 +200,7 @@ class RecipeMCP:
                 **generated.model_dump(mode="json"),
             }
 
-        @self._mcp.tool
+        @secure_tool(self._mcp, DELETE_SCOPE)
         async def delete_recipe(
             uuid: Annotated[
                 str,
@@ -208,12 +212,11 @@ class RecipeMCP:
             ctx: fastmcp.Context | None = None,
         ) -> None:
             """Soft-delete a recipe aggregate."""
-            await require_auth_mcp(ctx)
             await inject_tenant_uri(ctx)
             await service.delete(to_uuid6(StdUUID(uuid)))
             logger.info("✅ Recipe deleted via MCP", uuid=uuid)
 
-        @self._mcp.tool
+        @secure_tool(self._mcp)
         async def list_recipes(
             name: Annotated[
                 str | None,
@@ -335,7 +338,7 @@ class RecipeMCP:
             )
             return [RecipeSchema.model_validate(i).model_dump(mode="json") for i in hydrated]
 
-        @self._mcp.tool
+        @secure_tool(self._mcp, WRITE_SCOPE)
         async def duplicate_recipe(
             uuid: Annotated[
                 str,
