@@ -151,6 +151,52 @@ class RecipeMCP:
             return RecipeSchema.model_validate(await service.hydrate_recipe(result)).model_dump(mode="json")
 
         @self._mcp.tool
+        async def generate_recipe_image(
+            uuid: Annotated[
+                str,
+                Field(
+                    description="UUID (UUIDv7) of the recipe whose main image must be generated.",
+                    examples=["01951234-5678-7abc-def0-123456789abc"],
+                ),
+            ],
+            prompt: Annotated[
+                str | None,
+                Field(
+                    default=None,
+                    max_length=4000,
+                    description="Optional image prompt. By default media builds one from the recipe name and ingredients.",
+                ),
+            ] = None,
+            replace_existing: Annotated[
+                bool,
+                Field(
+                    default=False,
+                    description="Allow replacement when the recipe already has a main image.",
+                ),
+            ] = False,
+            ctx: fastmcp.Context | None = None,
+        ) -> dict:
+            """Generate, store, and attach a recipe main image through the media service."""
+            await require_auth_mcp(ctx)
+            await inject_tenant_uri(ctx)
+            recipe, generated = await service.generate_main_image(
+                to_uuid6(StdUUID(uuid)),
+                prompt=prompt,
+                replace_existing=replace_existing,
+            )
+            hydrated = await service.hydrate_recipe(recipe)
+            logger.info(
+                "✅ Recipe image generated via MCP",
+                uuid=uuid,
+                provider=generated.provider,
+                image_url=generated.image.url,
+            )
+            return {
+                "recipe": RecipeSchema.model_validate(hydrated).model_dump(mode="json"),
+                **generated.model_dump(mode="json"),
+            }
+
+        @self._mcp.tool
         async def delete_recipe(
             uuid: Annotated[
                 str,

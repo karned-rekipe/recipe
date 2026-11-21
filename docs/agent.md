@@ -42,6 +42,8 @@ Le serveur expose notamment :
 - `get_recipe` : lire une recette par UUID ;
 - `update_recipe` : remplacer une recette ;
 - `patch_recipe` : modifier partiellement une recette ;
+- `generate_recipe_image` : générer et rattacher l'image principale via le
+  service `media`, sans exposer ce service au client MCP ;
 - `delete_recipe` : supprimer logiquement une recette ;
 - `list_recipes` : lister et filtrer les recettes ;
 - `duplicate_recipe` : dupliquer une recette.
@@ -81,6 +83,34 @@ limiter son lot aux recettes actives et favorites :
 `list_recipes` conserve une réponse sous forme de liste pour rester compatible
 avec les agents existants. `offset` et `limit` permettent de traiter le
 catalogue par lots ; `limit` est plafonné à 200.
+
+## Générer l'image d'une recette
+
+Après avoir sélectionné une recette sans image, appeler le tool MCP
+`generate_recipe_image` :
+
+```json
+{
+  "uuid": "01951234-5678-7abc-def0-123456789abc"
+}
+```
+
+Le service `recipe` charge le nom et les ingrédients, demande à `media` de
+générer et stocker l'image, puis persiste l'URL obtenue dans `main_image`. Le
+client MCP ne doit donc pas appeler `media` directement. La réponse contient
+la recette mise à jour, les métadonnées de l'image et le fournisseur utilisé.
+
+Par sécurité, le tool refuse de remplacer une image existante. Le paramètre
+`replace_existing=true` doit être fourni explicitement pour régénérer une
+image. Un `prompt` optionnel peut remplacer le prompt construit par `media`.
+
+Le tool est une opération authentifiée susceptible de consommer un fournisseur
+payant. La connexion interne à `media` se configure sans secret :
+
+```dotenv
+RECIPE_MEDIA_API_BASE_URL=http://127.0.0.1:8030
+RECIPE_MEDIA_API_TIMEOUT_SECONDS=120
+```
 
 ## Filtres disponibles
 
@@ -122,4 +152,4 @@ print([tool.name for tool in asyncio.run(mcp.list_tools())])
 ```
 
 La liste doit contenir au minimum `list_recipes`, `get_recipe`,
-`create_recipe`, `patch_recipe` et `delete_recipe`.
+`create_recipe`, `patch_recipe`, `generate_recipe_image` et `delete_recipe`.

@@ -9,7 +9,9 @@ from adapters.output.memory.repositories.equipment_repository import InMemoryEqu
 from adapters.output.memory.repositories.ingredient_repository import InMemoryIngredientRepository
 from application.services.recipe_service import RecipeService
 from domain.models.equipment import Equipment
+from domain.models.generated_recipe_image import GeneratedRecipeImage
 from domain.models.ingredient import Ingredient
+from domain.ports.output.recipe_image_generator import RecipeImageGenerator
 from uuid6 import UUID
 
 INGREDIENT_UUID = "01951234-5678-7abc-def0-000000000101"
@@ -72,12 +74,29 @@ def equipment_repo():
 
 
 @pytest.fixture
-def service(repo, ingredient_repo, equipment_repo, logger):
+def image_generator():
+    generator = AsyncMock(spec=RecipeImageGenerator)
+    generator.generate.return_value = GeneratedRecipeImage.model_validate({
+        "image": {
+            "bucket": "recipes",
+            "key": "recipes/generated.png",
+            "url": "/api/media/v1/buckets/recipes/objects/recipes/generated.png",
+            "content_type": "image/png",
+            "size_bytes": 1234,
+        },
+        "provider": "test",
+    })
+    return generator
+
+
+@pytest.fixture
+def service(repo, ingredient_repo, equipment_repo, image_generator, logger):
     return RecipeService(
         repo,
         logger,
         ingredient_repository=ingredient_repo,
         equipment_repository=equipment_repo,
+        image_generator=image_generator,
     )
 
 
@@ -197,6 +216,21 @@ async def test_patch_updates_migration_metadata(client, created_uuid):
 
     assert data["quality_status"] == "validated"
     assert data["migration_metadata"] == {"source_table": "mkg_recipe", "qc_passed": True}
+
+
+async def test_generate_recipe_image_attaches_media_result(client, created_uuid, image_generator):
+    result = await client.call_tool("generate_recipe_image", {"uuid": created_uuid})
+    data = _data(result)
+
+    assert data["provider"] == "test"
+    assert data["image"]["content_type"] == "image/png"
+    assert data["recipe"]["main_image"] == data["image"]["url"]
+    image_generator.generate.assert_awaited_once_with(
+        recipe_uuid=created_uuid,
+        recipe_name="Farine",
+        ingredients=["Farine de ble"],
+        prompt=None,
+    )
 
 
 async def test_delete_hides_recipe(client, created_uuid):

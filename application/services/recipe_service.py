@@ -4,6 +4,7 @@ from typing import Any, Protocol
 from application.use_cases import FindByNameUseCase
 from arclith import BaseService, Logger
 from domain.models.equipment import Equipment
+from domain.models.generated_recipe_image import GeneratedRecipeImage
 from domain.models.ingredient import Ingredient
 from domain.models.ingredient_group import IngredientGroup
 from domain.models.ingredient_rayon import IngredientRayon
@@ -18,6 +19,7 @@ from domain.ports.output.equipment_repository import EquipmentRepository
 from domain.ports.output.ingredient_group_repository import IngredientGroupRepository
 from domain.ports.output.ingredient_repository import IngredientRepository
 from domain.ports.output.ingredient_rayon_repository import IngredientRayonRepository
+from domain.ports.output.recipe_image_generator import RecipeImageGenerator
 from domain.ports.output.recipe_repository import RecipeRepository
 from domain.ports.output.tag_repository import TagRepository
 from uuid6 import UUID
@@ -39,6 +41,14 @@ class RecipeComponentInUseError(ValueError):
     """Raised when deleting a recipe still used as a component."""
 
 
+class RecipeImageAlreadyExistsError(ValueError):
+    """Raised when image generation would replace an existing main image."""
+
+
+class RecipeImageGenerationUnavailableError(RuntimeError):
+    """Raised when no recipe image generator is configured."""
+
+
 class _ReadableRepository(Protocol):
     async def read(self, uuid: UUID) -> object | None: ...
 
@@ -54,6 +64,7 @@ class RecipeService(BaseService[Recipe]):
         tag_repository: TagRepository | None = None,
         group_repository: IngredientGroupRepository | None = None,
         rayon_repository: IngredientRayonRepository | None = None,
+        image_generator: RecipeImageGenerator | None = None,
     ) -> None:
         super().__init__(repository, logger, retention_days)
         self._recipe_repo = repository
@@ -63,6 +74,7 @@ class RecipeService(BaseService[Recipe]):
         self._tag_repo = tag_repository
         self._group_repo = group_repository
         self._rayon_repo = rayon_repository
+        self._image_generator = image_generator
 
     @property
     def repository(self) -> RecipeRepository:
@@ -87,6 +99,37 @@ class RecipeService(BaseService[Recipe]):
 
     async def find_by_name(self, name: str) -> list[Recipe]:
         return await self._find_by_name_uc.execute(name)
+
+    async def generate_main_image(
+        self,
+        uuid: UUID,
+        *,
+        prompt: str | None = None,
+        replace_existing: bool = False,
+    ) -> tuple[Recipe, GeneratedRecipeImage]:
+        if self._image_generator is None:
+            raise RecipeImageGenerationUnavailableError("Recipe image generation is not configured")
+
+        recipe = await self.read(uuid)
+        if recipe is None:
+            raise KeyError(f"Recipe with uuid {uuid} not found")
+        if recipe.main_image and recipe.main_image.strip() and not replace_existing:
+            raise RecipeImageAlreadyExistsError("Recipe already has a main image")
+
+        hydrated = await self.hydrate_recipe(recipe)
+        ingredient_names = [
+            ingredient["name"]
+            for ingredient in hydrated["ingredients"]
+            if isinstance(ingredient.get("name"), str) and ingredient["name"].strip()
+        ]
+        generated = await self._image_generator.generate(
+            recipe_uuid=str(recipe.uuid),
+            recipe_name=recipe.name,
+            ingredients=ingredient_names,
+            prompt=prompt,
+        )
+        updated = await self.update(recipe.model_copy(update={"main_image": generated.image.url}))
+        return updated, generated
 
     async def find_page_filtered(
         self,

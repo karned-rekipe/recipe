@@ -1,12 +1,22 @@
+from unittest.mock import AsyncMock
+
 import pytest
 from uuid6 import uuid7
 
-from application.services.recipe_service import RecipeComponentCycleError, RecipeComponentInUseError, RecipeService
+from application.services.recipe_service import (
+    RecipeComponentCycleError,
+    RecipeComponentInUseError,
+    RecipeImageAlreadyExistsError,
+    RecipeImageGenerationUnavailableError,
+    RecipeService,
+)
+from domain.models.generated_recipe_image import GeneratedRecipeImage
 from domain.models.recipe import Recipe
 from domain.models.recipe_component import RecipeComponent
 from domain.models.recipe_ingredient import RecipeIngredient
 from domain.models.recipe_line_origin import RecipeLineOrigin
 from domain.models.step import Step
+from domain.ports.output.recipe_image_generator import RecipeImageGenerator
 
 
 @pytest.fixture
@@ -58,6 +68,45 @@ async def test_duplicate(service):
 
 async def test_read_unknown_returns_none(service):
     assert await service.read(uuid7()) is None
+
+
+async def test_generate_main_image_requires_configured_generator(repo, logger):
+    recipe = await RecipeService(repo, logger).create(Recipe(name="Soupe"))
+
+    with pytest.raises(RecipeImageGenerationUnavailableError):
+        await RecipeService(repo, logger).generate_main_image(recipe.uuid)
+
+
+async def test_generate_main_image_refuses_implicit_replacement(repo, logger):
+    generator = AsyncMock(spec=RecipeImageGenerator)
+    service = RecipeService(repo, logger, image_generator=generator)
+    recipe = await service.create(Recipe(name="Soupe", main_image="/existing.png"))
+
+    with pytest.raises(RecipeImageAlreadyExistsError):
+        await service.generate_main_image(recipe.uuid)
+
+    generator.generate.assert_not_awaited()
+
+
+async def test_generate_main_image_persists_generated_url(repo, logger):
+    generator = AsyncMock(spec=RecipeImageGenerator)
+    generator.generate.return_value = GeneratedRecipeImage.model_validate({
+        "image": {
+            "bucket": "recipes",
+            "key": "recipes/soupe.png",
+            "url": "/api/media/v1/buckets/recipes/objects/recipes/soupe.png",
+            "content_type": "image/png",
+            "size_bytes": 42,
+        },
+        "provider": "test",
+    })
+    service = RecipeService(repo, logger, image_generator=generator)
+    recipe = await service.create(Recipe(name="Soupe"))
+
+    updated, generated = await service.generate_main_image(recipe.uuid)
+
+    assert updated.main_image == generated.image.url
+    assert (await service.read(recipe.uuid)).main_image == generated.image.url
 
 
 async def test_find_by_name_no_results(service):
