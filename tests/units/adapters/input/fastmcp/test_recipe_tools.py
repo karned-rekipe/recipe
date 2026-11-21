@@ -221,6 +221,40 @@ async def test_list_filtered(client):
     assert items[0]["name"] == "Farine de ble"
 
 
+async def test_list_filters_recipes_without_main_image(client):
+    await client.call_tool("create_recipe", {"payload": _payload(name="Sans image")})
+    await client.call_tool(
+        "create_recipe",
+        {"payload": _payload(name="Image vide", main_image="   ")},
+    )
+    await client.call_tool(
+        "create_recipe",
+        {"payload": _payload(name="Avec image", main_image="https://example.com/recipe.jpg")},
+    )
+
+    result = await client.call_tool("list_recipes", {"has_main_image": False})
+
+    assert {item["name"] for item in _data(result)} == {"Sans image", "Image vide"}
+
+
+async def test_list_combines_main_image_filter_and_pagination(client):
+    await client.call_tool("create_recipe", {"payload": _payload(name="A illustrer 1")})
+    await client.call_tool("create_recipe", {"payload": _payload(name="A illustrer 2")})
+    await client.call_tool(
+        "create_recipe",
+        {"payload": _payload(name="Deja illustree", main_image="https://example.com/recipe.jpg")},
+    )
+
+    result = await client.call_tool(
+        "list_recipes",
+        {"has_main_image": False, "offset": 1, "limit": 1},
+    )
+
+    items = _data(result)
+    assert len(items) == 1
+    assert items[0]["name"] == "A illustrer 2"
+
+
 async def test_duplicate_returns_new_uuid(client, created_uuid):
     result = await client.call_tool("duplicate_recipe", {"uuid": created_uuid})
     data = _data(result)

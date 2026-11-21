@@ -66,6 +66,16 @@ async def test_find_by_name_no_results(service):
     assert result == []
 
 
+async def test_find_page_filtered_by_main_image(service):
+    await service.create(Recipe(name="Sans image"))
+    await service.create(Recipe(name="Avec image", main_image="https://example.com/recipe.jpg"))
+
+    items, total = await service.find_page_filtered(has_main_image=False)
+
+    assert total == 1
+    assert [item.name for item in items] == ["Sans image"]
+
+
 async def test_create_parent_projects_component_lines(service):
     ingredient_uuid = uuid7()
     child = await service.create(

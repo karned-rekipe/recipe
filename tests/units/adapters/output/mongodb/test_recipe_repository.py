@@ -1,9 +1,13 @@
 from arclith.adapters.output.mongodb.config import MongoDBConfig
 
-from adapters.output.mongodb.repositories.recipe_repository import MongoDBRecipeRepository
+from adapters.output.mongodb.repositories.recipe_repository import (
+    MongoDBRecipeRepository,
+    _recipe_filter_match,
+)
 from domain.models.recipe import Recipe
 from domain.models.recipe_component import RecipeComponent
 from domain.models.recipe_equipment import RecipeEquipment
+from domain.models.recipe_filters import RecipeFilters
 from domain.models.recipe_ingredient import RecipeIngredient
 from domain.models.step import Step
 
@@ -93,3 +97,17 @@ def test_from_doc_restores_nested_aggregate(logger):
     assert restored.steps[0].uuid == original.steps[0].uuid
     assert restored.steps[0].component_uuid == component.uuid
     assert restored.steps[0].source_recipe_uuid == component.recipe_uuid
+
+
+def test_filter_match_selects_recipes_without_main_image():
+    assert _recipe_filter_match(RecipeFilters(has_main_image=False)) == {
+        "deleted_at": None,
+        "main_image": {"$not": {"$regex": r"\S"}},
+    }
+
+
+def test_filter_match_selects_recipes_with_main_image():
+    assert _recipe_filter_match(RecipeFilters(has_main_image=True)) == {
+        "deleted_at": None,
+        "main_image": {"$regex": r"\S"},
+    }

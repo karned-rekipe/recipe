@@ -105,6 +105,7 @@ class DuckDBRecipeRepository(DuckDBRepository[Recipe], RecipeRepository):
         season_month: int | None = None,
         status: RecipeStatus | None = None,
         meal_planner_eligible: bool | None = None,
+        has_main_image: bool | None = None,
         offset: int = 0,
         limit: int | None = None,
     ) -> tuple[list[Recipe], int]:
@@ -130,6 +131,7 @@ class DuckDBRecipeRepository(DuckDBRepository[Recipe], RecipeRepository):
                     season_month=season_month,
                     status=status,
                     meal_planner_eligible=meal_planner_eligible,
+                    has_main_image=has_main_image,
                 ),
             )
         ]
@@ -177,4 +179,3 @@ class DuckDBRecipeRepository(DuckDBRepository[Recipe], RecipeRepository):
         total = len(filtered)
         page = filtered[offset: offset + limit] if limit is not None else filtered[offset:]
         return page, total
-

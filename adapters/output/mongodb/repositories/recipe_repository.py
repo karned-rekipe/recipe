@@ -82,6 +82,7 @@ class MongoDBRecipeRepository(MongoDBRepository[Recipe], RecipeRepository):
         season_month: int | None = None,
         status: RecipeStatus | None = None,
         meal_planner_eligible: bool | None = None,
+        has_main_image: bool | None = None,
         offset: int = 0,
         limit: int | None = None,
     ) -> tuple[list[Recipe], int]:
@@ -97,6 +98,7 @@ class MongoDBRecipeRepository(MongoDBRepository[Recipe], RecipeRepository):
             season_month=season_month,
             status=status,
             meal_planner_eligible=meal_planner_eligible,
+            has_main_image=has_main_image,
         )
         return await self._find_page_by_match(_recipe_filter_match(filters), offset, limit)
 
@@ -159,6 +161,7 @@ def _mongo_filter_criteria(filters: RecipeFilters) -> tuple[dict[str, Any], ...]
     return (
         _optional_match("status", expected_status.value if expected_status is not None else None),
         _meal_planner_eligibility_match(filters.meal_planner_eligible),
+        _main_image_match(filters.has_main_image),
         _name_match(filters.name),
         _optional_match("ingredients.ingredient_uuid", _uuid_text(filters.ingredient_uuid)),
         _optional_match("equipment.equipment_uuid", _uuid_text(filters.equipment_uuid)),
@@ -177,6 +180,14 @@ def _optional_match(field: str, value: Any | None) -> dict[str, Any]:
 
 def _meal_planner_eligibility_match(eligible: bool | None) -> dict[str, Any]:
     return {"ingredients.0": {"$exists": True}} if eligible else {}
+
+
+def _main_image_match(has_main_image: bool | None) -> dict[str, Any]:
+    if has_main_image is None:
+        return {}
+    if has_main_image:
+        return {"main_image": {"$regex": r"\S"}}
+    return {"main_image": {"$not": {"$regex": r"\S"}}}
 
 
 def _name_match(name: str | None) -> dict[str, Any]:

@@ -57,6 +57,7 @@ class InMemoryRecipeRepository(InMemoryRepository[Recipe], RecipeRepository):
         season_month: int | None = None,
         status: RecipeStatus | None = None,
         meal_planner_eligible: bool | None = None,
+        has_main_image: bool | None = None,
         offset: int = 0,
         limit: int | None = None,
     ) -> tuple[list[Recipe], int]:
@@ -77,6 +78,7 @@ class InMemoryRecipeRepository(InMemoryRepository[Recipe], RecipeRepository):
                     season_month=season_month,
                     status=status,
                     meal_planner_eligible=meal_planner_eligible,
+                    has_main_image=has_main_image,
                 ),
             )
         ]
@@ -101,4 +103,3 @@ class InMemoryRecipeRepository(InMemoryRepository[Recipe], RecipeRepository):
             not recipe.is_deleted and any(str(item) == str(tag_uuid) for item in recipe.tag_uuids)
             for recipe in self._store.values()
         )
-

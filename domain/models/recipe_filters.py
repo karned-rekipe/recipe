@@ -17,6 +17,7 @@ class RecipeFilters:
     season_month: int | None = None
     status: RecipeStatus | None = None
     meal_planner_eligible: bool | None = None
+    has_main_image: bool | None = None
 
 
 def matches_recipe_filters(recipe: Recipe, filters: RecipeFilters) -> bool:
@@ -24,6 +25,7 @@ def matches_recipe_filters(recipe: Recipe, filters: RecipeFilters) -> bool:
         not recipe.is_deleted,
         _matches_status(recipe, filters),
         _matches_meal_planner_eligibility(recipe, filters.meal_planner_eligible),
+        _matches_main_image(recipe, filters.has_main_image),
         _matches_name(recipe, filters.name),
         _matches_ingredient(recipe, filters.ingredient_uuid),
         _matches_equipment(recipe, filters.equipment_uuid),
@@ -43,6 +45,12 @@ def _matches_status(recipe: Recipe, filters: RecipeFilters) -> bool:
 
 def _matches_meal_planner_eligibility(recipe: Recipe, eligible: bool | None) -> bool:
     return not eligible or bool(recipe.ingredients)
+
+
+def _matches_main_image(recipe: Recipe, has_main_image: bool | None) -> bool:
+    if has_main_image is None:
+        return True
+    return bool(recipe.main_image and recipe.main_image.strip()) is has_main_image
 
 
 def _matches_name(recipe: Recipe, name: str | None) -> bool:
