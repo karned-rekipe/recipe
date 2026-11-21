@@ -22,6 +22,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- MCP recipe listing now supports catalog filters, pagination, and
+  `has_main_image=false` to find recipes that need an image.
 - Comprehensive inline documentation in `config/adapters/adapters.yaml`
   - Detailed comparison of all repository adapter options
   - Clear pros/cons for each adapter choice
@@ -34,4 +36,3 @@ If you have an existing project using the old template:
 1. Open `config/adapters/adapters.yaml`
 2. Change `repository: mongodb` to `repository: memory` (or keep mongodb if you prefer)
 3. Review the new inline documentation for adapter configuration options
-

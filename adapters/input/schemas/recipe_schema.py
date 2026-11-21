@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from arclith.adapters.input.schemas.base_schema import BaseSchema
 from domain.models.country import Country
+from domain.models.generated_recipe_image import GeneratedRecipeImage
 from domain.models.meal_category import MealCategory
 from domain.models.recipe import MealType, Recipe, RecipeQualityStatus, RecipeStatus, Source
 from domain.models.recipe_component import RecipeComponent
@@ -258,6 +259,7 @@ class RecipePatchSchema(BaseModel):
     equipment: list[RecipeEquipmentWriteSchema] | None = None
     steps: list[RecipeStepWriteSchema] | None = None
 
+
     @field_validator("name", mode="before")
     @classmethod
     def name_not_empty(cls, v: str | None) -> str | None:
@@ -286,6 +288,18 @@ class RecipePatchSchema(BaseModel):
             if field_name in self.model_fields_set and value is None:
                 raise ValueError(f"{field_name} cannot be null when provided")
         return self
+
+
+class RecipeImageGenerationRequestSchema(BaseModel):
+    prompt: str | None = Field(
+        None,
+        max_length=4000,
+        description="Prompt optionnel. Media en construit un depuis la recette s'il est absent.",
+    )
+    replace_existing: bool = Field(
+        False,
+        description="Autorise le remplacement d'une image principale existante.",
+    )
 
 
 class RecipeCreatedSchema(BaseModel):
@@ -358,6 +372,10 @@ class RecipeSchema(BaseSchema):
             "total_time": 75,
         }]],
     )
+
+
+class RecipeImageGenerationResponseSchema(GeneratedRecipeImage):
+    recipe: RecipeSchema
 
 
 def recipe_create_payload_to_domain(payload: RecipeCreateSchema) -> Recipe:

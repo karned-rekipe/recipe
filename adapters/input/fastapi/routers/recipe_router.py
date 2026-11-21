@@ -8,6 +8,8 @@ from adapters.input.fastapi.dependencies import inject_tenant_uri, require_auth
 from adapters.input.schemas.recipe_schema import (
     RecipeCreatedSchema,
     RecipeCreateSchema,
+    RecipeImageGenerationRequestSchema,
+    RecipeImageGenerationResponseSchema,
     RecipePatchSchema,
     RecipeSchema,
     RecipeUpdateSchema,
@@ -20,6 +22,10 @@ from application.services.recipe_service import (
     RecipeComponentCycleError,
     RecipeComponentInUseError,
     RecipeReferenceError,
+    RecipeImageAlreadyExistsError,
+    RecipeImageGenerationConflictError,
+    RecipeImageGenerationInProgressError,
+    RecipeImageGenerationUnavailableError,
     RecipeService,
 )
 from arclith.adapters.input.fastapi.dependencies import get_duration_ms
@@ -61,6 +67,21 @@ class RecipeRouter:
             status_code=200,
         )
         self.router.add_api_route(
+            methods=["POST"],
+            path="/{uuid}/main-image",
+            endpoint=self.generate_recipe_image,
+            summary="Generate and attach the recipe main image",
+            response_model=ApiResponse[RecipeImageGenerationResponseSchema],
+            status_code=200,
+            responses={
+                404: {"description": "Recipe not found"},
+                409: {"description": "Recipe already has a main image"},
+                502: {"description": "Media image generation failed"},
+                503: {"description": "Image generation is not configured"},
+            },
+            dependencies=[Depends(require_auth)],
+        )
+        self.router.add_api_route(
             methods=["GET"],
             path="/{uuid}",
             endpoint=self.get_recipe,
@@ -71,6 +92,7 @@ class RecipeRouter:
                 404: {"description": "Recipe not found"},
             },
         )
+
         self.router.add_api_route(
             methods=["PUT"],
             path="/{uuid}",
@@ -116,6 +138,47 @@ class RecipeRouter:
             responses = {
                 404: {"description": "Recipe not found"},
             },
+        )
+
+    async def generate_recipe_image(
+        self,
+        uuid: StdUUID,
+        payload: RecipeImageGenerationRequestSchema,
+        duration_ms: Annotated[float, Depends(get_duration_ms)],
+    ) -> ApiResponse[RecipeImageGenerationResponseSchema]:
+        """Generate, store, and attach the recipe main image through media."""
+        try:
+            recipe, generated = await self._service.generate_main_image(
+                self._to_uuid6(uuid),
+                prompt=payload.prompt,
+                replace_existing=payload.replace_existing,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Recipe not found") from exc
+        except (
+            RecipeImageAlreadyExistsError,
+            RecipeImageGenerationConflictError,
+            RecipeImageGenerationInProgressError,
+        ) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except RecipeImageGenerationUnavailableError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+        hydrated = await self._service.hydrate_recipe(recipe)
+        self._logger.info(
+            "✅ Recipe image generated via HTTP",
+            uuid=str(uuid),
+            provider=generated.provider,
+            image_url=generated.image.url,
+        )
+        return success_response(
+            RecipeImageGenerationResponseSchema(
+                recipe=RecipeSchema.model_validate(hydrated),
+                **generated.model_dump(),
+            ),
+            metadata=ResponseMetadata(duration_ms=int(duration_ms)),
         )
 
     @staticmethod

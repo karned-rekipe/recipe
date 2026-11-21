@@ -1,9 +1,12 @@
 from collections.abc import Iterable
+from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
+from uuid import uuid4
 
 from application.use_cases import FindByNameUseCase
 from arclith import BaseService, Logger
 from domain.models.equipment import Equipment
+from domain.models.generated_recipe_image import GeneratedRecipeImage
 from domain.models.ingredient import Ingredient
 from domain.models.ingredient_group import IngredientGroup
 from domain.models.ingredient_rayon import IngredientRayon
@@ -18,6 +21,7 @@ from domain.ports.output.equipment_repository import EquipmentRepository
 from domain.ports.output.ingredient_group_repository import IngredientGroupRepository
 from domain.ports.output.ingredient_repository import IngredientRepository
 from domain.ports.output.ingredient_rayon_repository import IngredientRayonRepository
+from domain.ports.output.recipe_image_generator import RecipeImageGenerator
 from domain.ports.output.recipe_repository import RecipeRepository
 from domain.ports.output.tag_repository import TagRepository
 from uuid6 import UUID
@@ -39,6 +43,22 @@ class RecipeComponentInUseError(ValueError):
     """Raised when deleting a recipe still used as a component."""
 
 
+class RecipeImageAlreadyExistsError(ValueError):
+    """Raised when image generation would replace an existing main image."""
+
+
+class RecipeImageGenerationUnavailableError(RuntimeError):
+    """Raised when no recipe image generator is configured."""
+
+
+class RecipeImageGenerationInProgressError(RuntimeError):
+    """Raised when another request already generates an image for the recipe."""
+
+
+class RecipeImageGenerationConflictError(RuntimeError):
+    """Raised when the image reservation expires or the recipe changes."""
+
+
 class _ReadableRepository(Protocol):
     async def read(self, uuid: UUID) -> object | None: ...
 
@@ -54,6 +74,7 @@ class RecipeService(BaseService[Recipe]):
         tag_repository: TagRepository | None = None,
         group_repository: IngredientGroupRepository | None = None,
         rayon_repository: IngredientRayonRepository | None = None,
+        image_generator: RecipeImageGenerator | None = None,
     ) -> None:
         super().__init__(repository, logger, retention_days)
         self._recipe_repo = repository
@@ -63,6 +84,7 @@ class RecipeService(BaseService[Recipe]):
         self._tag_repo = tag_repository
         self._group_repo = group_repository
         self._rayon_repo = rayon_repository
+        self._image_generator = image_generator
 
     @property
     def repository(self) -> RecipeRepository:
@@ -88,6 +110,102 @@ class RecipeService(BaseService[Recipe]):
     async def find_by_name(self, name: str) -> list[Recipe]:
         return await self._find_by_name_uc.execute(name)
 
+    async def generate_main_image(
+        self,
+        uuid: UUID,
+        *,
+        prompt: str | None = None,
+        replace_existing: bool = False,
+    ) -> tuple[Recipe, GeneratedRecipeImage]:
+        image_generator = self._image_generator
+        if image_generator is None:
+            raise RecipeImageGenerationUnavailableError("Recipe image generation is not configured")
+
+        reservation_id = str(uuid4())
+        recipe = await self._reserve_main_image_generation(
+            uuid,
+            reservation_id,
+            replace_existing=replace_existing,
+        )
+        try:
+            generated = await image_generator.generate(
+                recipe_uuid=str(recipe.uuid),
+                recipe_name=recipe.name,
+                ingredients=await self._image_ingredient_names(recipe),
+                prompt=prompt,
+            )
+            updated = await self._complete_main_image_generation(
+                uuid,
+                reservation_id,
+                generated.image.url,
+                replace_existing=replace_existing,
+            )
+            return updated, generated
+        except BaseException:
+            await self._recipe_repo.release_image_generation(uuid, reservation_id)
+            raise
+
+    async def _reserve_main_image_generation(
+        self,
+        uuid: UUID,
+        reservation_id: str,
+        *,
+        replace_existing: bool,
+    ) -> Recipe:
+        current = await self.read(uuid)
+        self._ensure_image_generation_allowed(current, uuid, replace_existing=replace_existing)
+        recipe = await self._recipe_repo.reserve_image_generation(
+            uuid,
+            reservation_id,
+            datetime.now(timezone.utc) + timedelta(minutes=5),
+            replace_existing=replace_existing,
+        )
+        if recipe is not None:
+            return recipe
+        latest = await self.read(uuid)
+        self._ensure_image_generation_allowed(latest, uuid, replace_existing=replace_existing)
+        raise RecipeImageGenerationInProgressError("Recipe image generation is already in progress")
+
+    @staticmethod
+    def _ensure_image_generation_allowed(
+        recipe: Recipe | None,
+        uuid: UUID,
+        *,
+        replace_existing: bool,
+    ) -> None:
+        if recipe is None:
+            raise KeyError(f"Recipe with uuid {uuid} not found")
+        if recipe.main_image and recipe.main_image.strip() and not replace_existing:
+            raise RecipeImageAlreadyExistsError("Recipe already has a main image")
+
+    async def _image_ingredient_names(self, recipe: Recipe) -> list[str]:
+        hydrated = await self.hydrate_recipe(recipe)
+        return [
+            ingredient["name"]
+            for ingredient in hydrated["ingredients"]
+            if isinstance(ingredient.get("name"), str) and ingredient["name"].strip()
+        ]
+
+    async def _complete_main_image_generation(
+        self,
+        uuid: UUID,
+        reservation_id: str,
+        image_url: str,
+        *,
+        replace_existing: bool,
+    ) -> Recipe:
+        updated = await self._recipe_repo.complete_image_generation(
+            uuid,
+            reservation_id,
+            image_url,
+            replace_existing=replace_existing,
+        )
+        if updated is None:
+            raise RecipeImageGenerationConflictError(
+                "Recipe changed while its image was being generated"
+            )
+        return updated
+
     async def find_page_filtered(
         self,
         name: str | None = None,
@@ -101,6 +219,7 @@ class RecipeService(BaseService[Recipe]):
         season_month: int | None = None,
         status: RecipeStatus | None = None,
         meal_planner_eligible: bool | None = None,
+        has_main_image: bool | None = None,
         offset: int = 0,
         limit: int | None = None,
     ) -> tuple[list[Recipe], int]:
@@ -117,6 +236,7 @@ class RecipeService(BaseService[Recipe]):
             season_month=season_month,
             status=status,
             meal_planner_eligible=meal_planner_eligible,
+            has_main_image=has_main_image,
             offset=offset,
             limit=limit,
         )
@@ -163,6 +283,7 @@ class RecipeService(BaseService[Recipe]):
         season_month: int | None = None,
         status: RecipeStatus | None = None,
         meal_planner_eligible: bool | None = None,
+        has_main_image: bool | None = None,
         offset: int = 0,
         limit: int | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
@@ -178,6 +299,7 @@ class RecipeService(BaseService[Recipe]):
             season_month=season_month,
             status=status,
             meal_planner_eligible=meal_planner_eligible,
+            has_main_image=has_main_image,
             offset=offset,
             limit=limit,
         )

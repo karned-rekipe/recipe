@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from arclith.adapters.output.memory.repository import InMemoryRepository
 from domain.models.recipe import Recipe, RecipeStatus
 from domain.models.recipe_filters import RecipeFilters, matches_recipe_filters
@@ -6,6 +8,58 @@ from uuid6 import UUID
 
 
 class InMemoryRecipeRepository(InMemoryRepository[Recipe], RecipeRepository):
+    def __init__(self) -> None:
+        super().__init__()
+        self._image_generation_reservations: dict[UUID, tuple[str, datetime]] = {}
+
+    async def reserve_image_generation(
+        self,
+        recipe_uuid: UUID,
+        reservation_id: str,
+        expires_at: datetime,
+        *,
+        replace_existing: bool,
+    ) -> Recipe | None:
+        now = datetime.now(timezone.utc)
+        reservation = self._image_generation_reservations.get(recipe_uuid)
+        if reservation is not None and reservation[1] > now:
+            return None
+        recipe = self._store.get(recipe_uuid)
+        if recipe is None or recipe.is_deleted:
+            return None
+        if recipe.main_image and recipe.main_image.strip() and not replace_existing:
+            return None
+        self._image_generation_reservations[recipe_uuid] = (reservation_id, expires_at)
+        return recipe
+
+    async def complete_image_generation(
+        self,
+        recipe_uuid: UUID,
+        reservation_id: str,
+        image_url: str,
+        *,
+        replace_existing: bool,
+    ) -> Recipe | None:
+        reservation = self._image_generation_reservations.get(recipe_uuid)
+        recipe = self._store.get(recipe_uuid)
+        if reservation is None or reservation[0] != reservation_id or recipe is None:
+            return None
+        if recipe.main_image and recipe.main_image.strip() and not replace_existing:
+            return None
+        updated = recipe.model_copy(update={
+            "main_image": image_url,
+            "updated_at": datetime.now(timezone.utc),
+            "version": recipe.version + 1,
+        })
+        self._store[recipe_uuid] = updated
+        self._image_generation_reservations.pop(recipe_uuid, None)
+        return updated
+
+    async def release_image_generation(self, recipe_uuid: UUID, reservation_id: str) -> None:
+        reservation = self._image_generation_reservations.get(recipe_uuid)
+        if reservation is not None and reservation[0] == reservation_id:
+            self._image_generation_reservations.pop(recipe_uuid, None)
+
     async def find_by_name(self, name: str) -> list[Recipe]:
         return [i for i in self._store.values() if name.lower() in i.name.lower() and not i.is_deleted]
 
@@ -57,6 +111,7 @@ class InMemoryRecipeRepository(InMemoryRepository[Recipe], RecipeRepository):
         season_month: int | None = None,
         status: RecipeStatus | None = None,
         meal_planner_eligible: bool | None = None,
+        has_main_image: bool | None = None,
         offset: int = 0,
         limit: int | None = None,
     ) -> tuple[list[Recipe], int]:
@@ -77,6 +132,7 @@ class InMemoryRecipeRepository(InMemoryRepository[Recipe], RecipeRepository):
                     season_month=season_month,
                     status=status,
                     meal_planner_eligible=meal_planner_eligible,
+                    has_main_image=has_main_image,
                 ),
             )
         ]
@@ -101,4 +157,3 @@ class InMemoryRecipeRepository(InMemoryRepository[Recipe], RecipeRepository):
             not recipe.is_deleted and any(str(item) == str(tag_uuid) for item in recipe.tag_uuids)
             for recipe in self._store.values()
         )
-

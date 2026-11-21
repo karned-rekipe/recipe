@@ -17,6 +17,7 @@ from adapters.input.schemas.recipe_schema import (
 )
 from application.services.recipe_service import RecipeService
 from arclith.domain.ports.logger import Logger
+from domain.models.recipe import RecipeStatus
 
 
 class RecipeMCP:
@@ -150,6 +151,52 @@ class RecipeMCP:
             return RecipeSchema.model_validate(await service.hydrate_recipe(result)).model_dump(mode="json")
 
         @self._mcp.tool
+        async def generate_recipe_image(
+            uuid: Annotated[
+                str,
+                Field(
+                    description="UUID (UUIDv7) of the recipe whose main image must be generated.",
+                    examples=["01951234-5678-7abc-def0-123456789abc"],
+                ),
+            ],
+            prompt: Annotated[
+                str | None,
+                Field(
+                    default=None,
+                    max_length=4000,
+                    description="Optional image prompt. By default media builds one from the recipe name and ingredients.",
+                ),
+            ] = None,
+            replace_existing: Annotated[
+                bool,
+                Field(
+                    default=False,
+                    description="Allow replacement when the recipe already has a main image.",
+                ),
+            ] = False,
+            ctx: fastmcp.Context | None = None,
+        ) -> dict:
+            """Generate, store, and attach a recipe main image through the media service."""
+            await require_auth_mcp(ctx)
+            await inject_tenant_uri(ctx)
+            recipe, generated = await service.generate_main_image(
+                to_uuid6(StdUUID(uuid)),
+                prompt=prompt,
+                replace_existing=replace_existing,
+            )
+            hydrated = await service.hydrate_recipe(recipe)
+            logger.info(
+                "✅ Recipe image generated via MCP",
+                uuid=uuid,
+                provider=generated.provider,
+                image_url=generated.image.url,
+            )
+            return {
+                "recipe": RecipeSchema.model_validate(hydrated).model_dump(mode="json"),
+                **generated.model_dump(mode="json"),
+            }
+
+        @self._mcp.tool
         async def delete_recipe(
             uuid: Annotated[
                 str,
@@ -176,13 +223,116 @@ class RecipeMCP:
                     examples=["houmous", None],
                 ),
             ] = None,
+            ingredient_uuid: Annotated[
+                str | None,
+                Field(
+                    default=None,
+                    description="Optional ingredient UUID used by the recipe.",
+                    examples=["01951234-5678-7abc-def0-123456789abc", None],
+                ),
+            ] = None,
+            equipment_uuid: Annotated[
+                str | None,
+                Field(
+                    default=None,
+                    description="Optional equipment UUID used by the recipe.",
+                    examples=["01951234-5678-7abc-def0-123456789abd", None],
+                ),
+            ] = None,
+            tag_uuid: Annotated[
+                str | None,
+                Field(
+                    default=None,
+                    description="Optional tag UUID assigned to the recipe.",
+                    examples=["01951234-5678-7abc-def0-123456789abe", None],
+                ),
+            ] = None,
+            difficulty: Annotated[
+                int | None,
+                Field(default=None, ge=1, le=5, description="Optional difficulty level from 1 to 5."),
+            ] = None,
+            origin_country: Annotated[
+                str | None,
+                Field(
+                    default=None,
+                    min_length=2,
+                    max_length=2,
+                    description="Optional ISO 3166-1 alpha-2 origin country code.",
+                    examples=["FR", None],
+                ),
+            ] = None,
+            price: Annotated[
+                int | None,
+                Field(default=None, ge=1, le=5, description="Optional price level from 1 to 5."),
+            ] = None,
+            favorite: Annotated[
+                bool | None,
+                Field(default=None, description="Optional favorite-state filter."),
+            ] = None,
+            season_month: Annotated[
+                int | None,
+                Field(default=None, ge=1, le=12, description="Optional month with a positive seasonality score."),
+            ] = None,
+            status: Annotated[
+                RecipeStatus | None,
+                Field(default=None, description="Optional lifecycle status: draft, active, or archived."),
+            ] = None,
+            meal_planner_eligible: Annotated[
+                bool | None,
+                Field(default=None, description="When true, return only active recipes with ingredients."),
+            ] = None,
+            has_main_image: Annotated[
+                bool | None,
+                Field(
+                    default=None,
+                    description=(
+                        "Filter on the main image. Set to false to list recipes that need an image; "
+                        "missing, null, empty, and whitespace-only values are treated as no image."
+                    ),
+                ),
+            ] = None,
+            offset: Annotated[
+                int,
+                Field(default=0, ge=0, description="Number of matching recipes to skip."),
+            ] = 0,
+            limit: Annotated[
+                int | None,
+                Field(default=None, ge=1, le=200, description="Maximum number of recipes to return."),
+            ] = None,
             ctx: fastmcp.Context | None = None,
         ) -> list[dict]:
-            """List all active recipe aggregates."""
+            """List non-deleted recipe aggregates using optional filters.
+
+            Set has_main_image to false to find recipes that need an image.
+            Filters are combined with AND semantics. The return type remains a
+            list for backward compatibility with existing MCP consumers.
+            """
             await inject_tenant_uri(ctx)
-            items = await service.find_by_name(name) if name else await service.find_all()
-            hydrated = await service.hydrate_recipes(items)
-            logger.info("✅ Recipes listed via MCP", count=len(items), filter=name)
+            hydrated, total = await service.find_page_filtered_hydrated(
+                name=name,
+                ingredient_uuid=to_uuid6(StdUUID(ingredient_uuid)) if ingredient_uuid else None,
+                equipment_uuid=to_uuid6(StdUUID(equipment_uuid)) if equipment_uuid else None,
+                tag_uuid=to_uuid6(StdUUID(tag_uuid)) if tag_uuid else None,
+                difficulty=difficulty,
+                origin_country=origin_country.upper() if origin_country else None,
+                price=price,
+                favorite=favorite,
+                season_month=season_month,
+                status=status,
+                meal_planner_eligible=meal_planner_eligible,
+                has_main_image=has_main_image,
+                offset=offset,
+                limit=limit,
+            )
+            logger.info(
+                "✅ Recipes listed via MCP",
+                count=len(hydrated),
+                total=total,
+                name=name,
+                has_main_image=has_main_image,
+                offset=offset,
+                limit=limit,
+            )
             return [RecipeSchema.model_validate(i).model_dump(mode="json") for i in hydrated]
 
         @self._mcp.tool

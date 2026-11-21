@@ -1,5 +1,6 @@
 import re
 from collections.abc import Mapping, Sequence
+from datetime import datetime, timezone
 from typing import Any
 from typing import cast
 
@@ -9,6 +10,7 @@ from arclith.domain.ports.logger import Logger
 from domain.models.recipe import Recipe, RecipeStatus
 from domain.models.recipe_filters import RecipeFilters
 from domain.ports.output.recipe_repository import RecipeRepository
+from pymongo import ReturnDocument
 from uuid6 import UUID
 
 
@@ -22,6 +24,67 @@ class MongoDBRecipeRepository(MongoDBRepository[Recipe], RecipeRepository):
         if doc.get("legacy_id") is None:
             doc.pop("legacy_id", None)
         return doc
+
+    async def reserve_image_generation(
+        self,
+        recipe_uuid: UUID,
+        reservation_id: str,
+        expires_at: datetime,
+        *,
+        replace_existing: bool,
+    ) -> Recipe | None:
+        now = datetime.now(timezone.utc)
+        async with self._collection() as col:
+            doc = await col.find_one_and_update(
+                _image_reservation_filter(recipe_uuid, now, replace_existing=replace_existing),
+                {
+                    "$set": {
+                        "image_generation_reservation": {
+                            "id": reservation_id,
+                            "expires_at": expires_at,
+                        }
+                    }
+                },
+                return_document=ReturnDocument.AFTER,
+            )
+        return self._from_doc(doc) if doc is not None else None
+
+    async def complete_image_generation(
+        self,
+        recipe_uuid: UUID,
+        reservation_id: str,
+        image_url: str,
+        *,
+        replace_existing: bool,
+    ) -> Recipe | None:
+        async with self._collection() as col:
+            doc = await col.find_one_and_update(
+                _image_completion_filter(
+                    recipe_uuid,
+                    reservation_id,
+                    replace_existing=replace_existing,
+                ),
+                {
+                    "$set": {
+                        "main_image": image_url,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                    "$inc": {"version": 1},
+                    "$unset": {"image_generation_reservation": ""},
+                },
+                return_document=ReturnDocument.AFTER,
+            )
+        return self._from_doc(doc) if doc is not None else None
+
+    async def release_image_generation(self, recipe_uuid: UUID, reservation_id: str) -> None:
+        async with self._collection() as col:
+            await col.update_one(
+                {
+                    "_id": str(recipe_uuid),
+                    "image_generation_reservation.id": reservation_id,
+                },
+                {"$unset": {"image_generation_reservation": ""}},
+            )
 
     async def find_by_name(self, name: str) -> list[Recipe]:
         async with self._collection() as col:
@@ -82,6 +145,7 @@ class MongoDBRecipeRepository(MongoDBRepository[Recipe], RecipeRepository):
         season_month: int | None = None,
         status: RecipeStatus | None = None,
         meal_planner_eligible: bool | None = None,
+        has_main_image: bool | None = None,
         offset: int = 0,
         limit: int | None = None,
     ) -> tuple[list[Recipe], int]:
@@ -97,6 +161,7 @@ class MongoDBRecipeRepository(MongoDBRepository[Recipe], RecipeRepository):
             season_month=season_month,
             status=status,
             meal_planner_eligible=meal_planner_eligible,
+            has_main_image=has_main_image,
         )
         return await self._find_page_by_match(_recipe_filter_match(filters), offset, limit)
 
@@ -154,11 +219,47 @@ def _recipe_filter_match(filters: RecipeFilters) -> dict[str, Any]:
     return match
 
 
+def _image_reservation_filter(
+    recipe_uuid: UUID,
+    now: datetime,
+    *,
+    replace_existing: bool,
+) -> dict[str, Any]:
+    match: dict[str, Any] = {
+        "_id": str(recipe_uuid),
+        "deleted_at": None,
+        "$or": [
+            {"image_generation_reservation": {"$exists": False}},
+            {"image_generation_reservation.expires_at": {"$lte": now}},
+        ],
+    }
+    if not replace_existing:
+        match["main_image"] = {"$not": {"$regex": r"\S"}}
+    return match
+
+
+def _image_completion_filter(
+    recipe_uuid: UUID,
+    reservation_id: str,
+    *,
+    replace_existing: bool,
+) -> dict[str, Any]:
+    match: dict[str, Any] = {
+        "_id": str(recipe_uuid),
+        "deleted_at": None,
+        "image_generation_reservation.id": reservation_id,
+    }
+    if not replace_existing:
+        match["main_image"] = {"$not": {"$regex": r"\S"}}
+    return match
+
+
 def _mongo_filter_criteria(filters: RecipeFilters) -> tuple[dict[str, Any], ...]:
     expected_status = RecipeStatus.active if filters.meal_planner_eligible else filters.status
     return (
         _optional_match("status", expected_status.value if expected_status is not None else None),
         _meal_planner_eligibility_match(filters.meal_planner_eligible),
+        _main_image_match(filters.has_main_image),
         _name_match(filters.name),
         _optional_match("ingredients.ingredient_uuid", _uuid_text(filters.ingredient_uuid)),
         _optional_match("equipment.equipment_uuid", _uuid_text(filters.equipment_uuid)),
@@ -177,6 +278,14 @@ def _optional_match(field: str, value: Any | None) -> dict[str, Any]:
 
 def _meal_planner_eligibility_match(eligible: bool | None) -> dict[str, Any]:
     return {"ingredients.0": {"$exists": True}} if eligible else {}
+
+
+def _main_image_match(has_main_image: bool | None) -> dict[str, Any]:
+    if has_main_image is None:
+        return {}
+    if has_main_image:
+        return {"main_image": {"$regex": r"\S"}}
+    return {"main_image": {"$not": {"$regex": r"\S"}}}
 
 
 def _name_match(name: str | None) -> dict[str, Any]:

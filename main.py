@@ -3,7 +3,7 @@
     MODE=api          FastAPI REST  :8000  (default)
     MODE=mcp_http     MCP streamable-HTTP  :8001
     MODE=mcp_sse      MCP SSE              :8001
-    MODE=all          API + MCP HTTP simultaneously (dev / POC)
+    MODE=all          API + MCP HTTP in isolated child processes (dev / POC)
 
 ProbeServer always starts on :9000 (probe.enabled=true in config.yaml).
 """
@@ -20,6 +20,7 @@ import adapters.input.fastmcp.resources as resources_module
 from adapters.input.fastapi.register import register_routers
 from arclith import Arclith
 from infrastructure.logging_setup import setup_logging
+from infrastructure.process_supervisor import run_isolated_transports
 
 # ── MCP registration imports ──────────────────────────────────────────────────
 # Structure :
@@ -45,6 +46,8 @@ if MODE not in _VALID_MODES:
     sys.exit(1)
 
 arclith = Arclith(_CONFIG)
+if os.getenv("REKIPE_DISABLE_PROBES", "").lower() in {"1", "true", "yes"}:
+    arclith.config.probe.enabled = False
 
 # ── FastAPI app exposed at module level for PyCharm / uvicorn ─────────────────
 app = arclith.fastapi()
@@ -94,10 +97,5 @@ if __name__ == "__main__":
 
 
         case "all":
-            _logger.info("🧩 MODE=all — API :8000 + MCP HTTP :8001 + probes :9000")
-            arclith.run_with_probes(
-                _make_api_runner(),
-                _make_mcp_runner("mcp_http"),
-                transports=["api", "mcp_http"],
-            )
-
+            _logger.info("🧩 MODE=all — isolated API :8000 + MCP HTTP :8001 + probes :9000")
+            sys.exit(run_isolated_transports(Path(__file__)))
