@@ -8,6 +8,8 @@ from adapters.input.fastapi.dependencies import inject_tenant_uri, require_auth
 from adapters.input.schemas.recipe_schema import (
     RecipeCreatedSchema,
     RecipeCreateSchema,
+    RecipeAIEnrichmentRequestSchema,
+    RecipeAIEnrichmentResponseSchema,
     RecipeImageGenerationRequestSchema,
     RecipeImageGenerationResponseSchema,
     RecipePatchSchema,
@@ -21,6 +23,7 @@ from domain.models.recipe import RecipeStatus
 from application.services.recipe_service import (
     RecipeComponentCycleError,
     RecipeComponentInUseError,
+    RecipeAIEnrichmentUnavailableError,
     RecipeReferenceError,
     RecipeImageAlreadyExistsError,
     RecipeImageGenerationConflictError,
@@ -78,6 +81,20 @@ class RecipeRouter:
                 409: {"description": "Recipe already has a main image"},
                 502: {"description": "Media image generation failed"},
                 503: {"description": "Image generation is not configured"},
+            },
+            dependencies=[Depends(require_auth)],
+        )
+        self.router.add_api_route(
+            methods=["POST"],
+            path="/{uuid}/ai-enrich",
+            endpoint=self.enrich_recipe_with_ai,
+            summary="Enrich an existing recipe through the internal AI agent",
+            response_model=ApiResponse[RecipeAIEnrichmentResponseSchema],
+            status_code=200,
+            responses={
+                404: {"description": "Recipe not found"},
+                502: {"description": "Recipe AI enrichment failed"},
+                503: {"description": "Recipe AI enrichment is not configured"},
             },
             dependencies=[Depends(require_auth)],
         )
@@ -177,6 +194,39 @@ class RecipeRouter:
             RecipeImageGenerationResponseSchema(
                 recipe=RecipeSchema.model_validate(hydrated),
                 **generated.model_dump(),
+            ),
+            metadata=ResponseMetadata(duration_ms=int(duration_ms)),
+        )
+
+    async def enrich_recipe_with_ai(
+        self,
+        uuid: StdUUID,
+        payload: RecipeAIEnrichmentRequestSchema,
+        duration_ms: Annotated[float, Depends(get_duration_ms)],
+    ) -> ApiResponse[RecipeAIEnrichmentResponseSchema]:
+        """Enrich an existing recipe through the cluster-internal agent MCP."""
+        try:
+            recipe, result = await self._service.enrich_with_ai(
+                self._to_uuid6(uuid),
+                generate_image=payload.generate_image,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Recipe not found") from exc
+        except RecipeAIEnrichmentUnavailableError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+        hydrated = await self._service.hydrate_recipe(recipe)
+        self._logger.info(
+            "✅ Recipe enriched through internal AI agent via HTTP",
+            uuid=str(uuid),
+            image_generated=result.image_generated,
+        )
+        return success_response(
+            RecipeAIEnrichmentResponseSchema(
+                recipe=RecipeSchema.model_validate(hydrated),
+                **result.model_dump(),
             ),
             metadata=ResponseMetadata(duration_ms=int(duration_ms)),
         )

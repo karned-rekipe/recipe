@@ -10,15 +10,18 @@ from application.services.recipe_service import (
     RecipeImageAlreadyExistsError,
     RecipeImageGenerationInProgressError,
     RecipeImageGenerationUnavailableError,
+    RecipeAIEnrichmentUnavailableError,
     RecipeService,
 )
 from domain.models.generated_recipe_image import GeneratedRecipeImage
+from domain.models.recipe_ai_enrichment import RecipeAIEnrichment
 from domain.models.recipe import Recipe
 from domain.models.recipe_component import RecipeComponent
 from domain.models.recipe_ingredient import RecipeIngredient
 from domain.models.recipe_line_origin import RecipeLineOrigin
 from domain.models.step import Step
 from domain.ports.output.recipe_image_generator import RecipeImageGenerator
+from domain.ports.output.recipe_ai_enrichment_agent import RecipeAIEnrichmentAgent
 
 
 @pytest.fixture
@@ -77,6 +80,34 @@ async def test_generate_main_image_requires_configured_generator(repo, logger):
 
     with pytest.raises(RecipeImageGenerationUnavailableError):
         await RecipeService(repo, logger).generate_main_image(recipe.uuid)
+
+
+async def test_enrich_with_ai_requires_configured_agent(repo, logger):
+    recipe = await RecipeService(repo, logger).create(Recipe(name="Soupe"))
+
+    with pytest.raises(RecipeAIEnrichmentUnavailableError):
+        await RecipeService(repo, logger).enrich_with_ai(recipe.uuid)
+
+
+async def test_enrich_with_ai_delegates_to_internal_agent(repo, logger):
+    agent = AsyncMock(spec=RecipeAIEnrichmentAgent)
+    agent.enrich.return_value = RecipeAIEnrichment(
+        recipe_uuid="placeholder",
+        recipe_name="Soupe",
+        formatted_response="Recette enrichie",
+        updated=True,
+    )
+    service = RecipeService(repo, logger, ai_enrichment_agent=agent)
+    recipe = await service.create(Recipe(name="Soupe"))
+
+    updated, result = await service.enrich_with_ai(recipe.uuid, generate_image=False)
+
+    assert updated.uuid == recipe.uuid
+    assert result.updated is True
+    agent.enrich.assert_awaited_once_with(
+        recipe_uuid=str(recipe.uuid),
+        generate_image=False,
+    )
 
 
 async def test_generate_main_image_refuses_implicit_replacement(repo, logger):

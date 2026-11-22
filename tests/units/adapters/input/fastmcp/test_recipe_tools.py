@@ -10,8 +10,10 @@ from adapters.output.memory.repositories.ingredient_repository import InMemoryIn
 from application.services.recipe_service import RecipeService
 from domain.models.equipment import Equipment
 from domain.models.generated_recipe_image import GeneratedRecipeImage
+from domain.models.recipe_ai_enrichment import RecipeAIEnrichment
 from domain.models.ingredient import Ingredient
 from domain.ports.output.recipe_image_generator import RecipeImageGenerator
+from domain.ports.output.recipe_ai_enrichment_agent import RecipeAIEnrichmentAgent
 from uuid6 import UUID
 
 INGREDIENT_UUID = "01951234-5678-7abc-def0-000000000101"
@@ -90,13 +92,28 @@ def image_generator():
 
 
 @pytest.fixture
-def service(repo, ingredient_repo, equipment_repo, image_generator, logger):
+def ai_enrichment_agent():
+    agent = AsyncMock(spec=RecipeAIEnrichmentAgent)
+    agent.enrich.return_value = RecipeAIEnrichment(
+        recipe_uuid="recipe-1",
+        recipe_name="Farine",
+        formatted_response="Recette enrichie",
+        updated=True,
+        image_generated=False,
+        warnings=[],
+    )
+    return agent
+
+
+@pytest.fixture
+def service(repo, ingredient_repo, equipment_repo, image_generator, ai_enrichment_agent, logger):
     return RecipeService(
         repo,
         logger,
         ingredient_repository=ingredient_repo,
         equipment_repository=equipment_repo,
         image_generator=image_generator,
+        ai_enrichment_agent=ai_enrichment_agent,
     )
 
 
@@ -228,6 +245,25 @@ async def test_generate_recipe_image_attaches_media_result(client, created_uuid,
         recipe_name="Farine",
         ingredients=["Farine de ble"],
         prompt=None,
+    )
+
+
+async def test_ai_enrich_recipe_delegates_to_internal_agent(
+    client,
+    created_uuid,
+    ai_enrichment_agent,
+):
+    result = await client.call_tool(
+        "ai_enrich_recipe",
+        {"uuid": created_uuid, "generate_image": False},
+    )
+    data = _data(result)
+
+    assert data["updated"] is True
+    assert data["recipe"]["uuid"] == created_uuid
+    ai_enrichment_agent.enrich.assert_awaited_once_with(
+        recipe_uuid=created_uuid,
+        generate_image=False,
     )
 
 

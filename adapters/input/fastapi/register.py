@@ -17,6 +17,7 @@ from infrastructure.containers.ingredient_enrichment_suggestion_container import
 from infrastructure.containers.ingredient_rayon_container import build_ingredient_rayon_service
 from infrastructure.containers.recipe_container import build_recipe_service
 from infrastructure.containers.recipe_image_generator_container import build_recipe_image_generator
+from infrastructure.containers.recipe_ai_enrichment_agent_container import build_recipe_ai_enrichment_agent
 from infrastructure.containers.tag_container import build_tag_service
 from infrastructure.purge_registry import purge_registry
 
@@ -39,6 +40,7 @@ def register_routers(app: FastAPI, arclith: Arclith) -> None:
         group_repository=group_service.repository,
         rayon_repository=rayon_service.repository,
         image_generator=build_recipe_image_generator(),
+        ai_enrichment_agent=build_recipe_ai_enrichment_agent(),
     )
     suggestion_service, _ = build_ingredient_enrichment_suggestion_service(
         arclith,

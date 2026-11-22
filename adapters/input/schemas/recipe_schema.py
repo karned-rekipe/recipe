@@ -302,6 +302,13 @@ class RecipeImageGenerationRequestSchema(BaseModel):
     )
 
 
+class RecipeAIEnrichmentRequestSchema(BaseModel):
+    generate_image: bool = Field(
+        True,
+        description="Génère une image principale si la recette n'en possède pas.",
+    )
+
+
 class RecipeCreatedSchema(BaseModel):
     uuid: StdUUID = Field(
         description="Identifiant unique de la recette creee (UUIDv7).",
@@ -376,6 +383,16 @@ class RecipeSchema(BaseSchema):
 
 class RecipeImageGenerationResponseSchema(GeneratedRecipeImage):
     recipe: RecipeSchema
+
+
+class RecipeAIEnrichmentResponseSchema(BaseModel):
+    recipe: RecipeSchema
+    recipe_uuid: str
+    recipe_name: str
+    formatted_response: str
+    updated: bool
+    image_generated: bool
+    warnings: list[str] = Field(default_factory=list)
 
 
 def recipe_create_payload_to_domain(payload: RecipeCreateSchema) -> Recipe:

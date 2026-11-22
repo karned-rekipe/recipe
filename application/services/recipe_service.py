@@ -11,6 +11,7 @@ from domain.models.ingredient import Ingredient
 from domain.models.ingredient_group import IngredientGroup
 from domain.models.ingredient_rayon import IngredientRayon
 from domain.models.recipe import Recipe, RecipeStatus
+from domain.models.recipe_ai_enrichment import RecipeAIEnrichment
 from domain.models.recipe_component import RecipeComponent
 from domain.models.recipe_equipment import RecipeEquipment
 from domain.models.recipe_ingredient import RecipeIngredient
@@ -22,6 +23,7 @@ from domain.ports.output.ingredient_group_repository import IngredientGroupRepos
 from domain.ports.output.ingredient_repository import IngredientRepository
 from domain.ports.output.ingredient_rayon_repository import IngredientRayonRepository
 from domain.ports.output.recipe_image_generator import RecipeImageGenerator
+from domain.ports.output.recipe_ai_enrichment_agent import RecipeAIEnrichmentAgent
 from domain.ports.output.recipe_repository import RecipeRepository
 from domain.ports.output.tag_repository import TagRepository
 from uuid6 import UUID
@@ -59,6 +61,10 @@ class RecipeImageGenerationConflictError(RuntimeError):
     """Raised when the image reservation expires or the recipe changes."""
 
 
+class RecipeAIEnrichmentUnavailableError(RuntimeError):
+    """Raised when no internal recipe AI agent is configured."""
+
+
 class _ReadableRepository(Protocol):
     async def read(self, uuid: UUID) -> object | None: ...
 
@@ -75,6 +81,7 @@ class RecipeService(BaseService[Recipe]):
         group_repository: IngredientGroupRepository | None = None,
         rayon_repository: IngredientRayonRepository | None = None,
         image_generator: RecipeImageGenerator | None = None,
+        ai_enrichment_agent: RecipeAIEnrichmentAgent | None = None,
     ) -> None:
         super().__init__(repository, logger, retention_days)
         self._recipe_repo = repository
@@ -85,6 +92,7 @@ class RecipeService(BaseService[Recipe]):
         self._group_repo = group_repository
         self._rayon_repo = rayon_repository
         self._image_generator = image_generator
+        self._ai_enrichment_agent = ai_enrichment_agent
 
     @property
     def repository(self) -> RecipeRepository:
@@ -144,6 +152,27 @@ class RecipeService(BaseService[Recipe]):
         except BaseException:
             await self._recipe_repo.release_image_generation(uuid, reservation_id)
             raise
+
+    async def enrich_with_ai(
+        self,
+        uuid: UUID,
+        *,
+        generate_image: bool = True,
+    ) -> tuple[Recipe, RecipeAIEnrichment]:
+        agent = self._ai_enrichment_agent
+        if agent is None:
+            raise RecipeAIEnrichmentUnavailableError("Recipe AI enrichment is not configured")
+        if await self.read(uuid) is None:
+            raise KeyError(f"Recipe with uuid {uuid} not found")
+
+        result = await agent.enrich(
+            recipe_uuid=str(uuid),
+            generate_image=generate_image,
+        )
+        updated = await self.read(uuid)
+        if updated is None:
+            raise KeyError(f"Recipe with uuid {uuid} not found after AI enrichment")
+        return updated, result
 
     async def _reserve_main_image_generation(
         self,

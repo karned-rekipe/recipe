@@ -44,6 +44,8 @@ Le serveur expose notamment :
 - `patch_recipe` : modifier partiellement une recette ;
 - `generate_recipe_image` : générer et rattacher l'image principale via le
   service `media`, sans exposer ce service au client MCP ;
+- `ai_enrich_recipe` : enrichir et reclasser une fiche existante via le MCP
+  interne de l'agent, sans exposer cet agent au client ;
 - `delete_recipe` : supprimer logiquement une recette ;
 - `list_recipes` : lister et filtrer les recettes ;
 - `duplicate_recipe` : dupliquer une recette.
@@ -132,6 +134,34 @@ RECIPE_MEDIA_API_BASE_URL=http://127.0.0.1:8030
 RECIPE_MEDIA_API_TIMEOUT_SECONDS=120
 ```
 
+## Enrichir une recette via l'IA
+
+Le tool public `ai_enrich_recipe` délègue au MCP interne de
+`agent-recipe-creator`. L'agent n'a donc pas besoin d'un Ingress public et le
+client Codex conserve un seul serveur MCP, celui de `recipe` :
+
+```json
+{
+  "uuid": "01951234-5678-7abc-def0-123456789abc",
+  "generate_image": true
+}
+```
+
+La même façade existe en REST avec
+`POST /v1/recipes/{uuid}/ai-enrich`. La réponse contient le résultat de
+l'agent et la recette hydratée après mise à jour. Le service interne se
+configure par `RECIPE_AGENT_MCP_URL` et
+`RECIPE_AGENT_MCP_TIMEOUT_SECONDS` ; le délai par défaut est de 300 secondes.
+
+Lors de l'enrichissement, l'agent reçoit le catalogue de tags courant, choisit
+uniquement des noms existants et les résout vers leurs UUID. Les tags détectés
+sont ajoutés aux tags déjà présents ; aucun tag humain n'est retiré et aucun
+nouveau tag n'est créé implicitement.
+
+Le catalogue curaté peut être chargé de manière idempotente avec
+`scripts/seed_recipe_tags.py`. Le script compare casse, accents et espaces
+avant toute création et propose un mode lecture seule par défaut.
+
 ## Filtres disponibles
 
 Les filtres optionnels sont :
@@ -172,4 +202,5 @@ print([tool.name for tool in asyncio.run(mcp.list_tools())])
 ```
 
 La liste doit contenir au minimum `list_recipes`, `get_recipe`,
-`create_recipe`, `patch_recipe`, `generate_recipe_image` et `delete_recipe`.
+`create_recipe`, `patch_recipe`, `generate_recipe_image`, `ai_enrich_recipe`
+et `delete_recipe`.

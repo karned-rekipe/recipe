@@ -71,6 +71,8 @@ class RecipePrompts:
                 "- list_recipes(filters...) — list non-deleted recipes; use "
                 "has_main_image=false to find recipes that need an image\n"
                 "- duplicate_recipe(uuid) — clone with a new UUID\n"
+                "- generate_recipe_image(uuid) — generate and attach the main image\n"
+                "- ai_enrich_recipe(uuid, generate_image) — enrich and reorganize an existing recipe via the internal AI agent\n"
                 "- purge_recipes() — permanently remove expired soft-deleted entries\n\n"
                 "**Prompts** (LLM guidance):\n"
                 "- check_duplicate(recipe_name) — avoid duplicates before creating\n"

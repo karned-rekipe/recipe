@@ -31,6 +31,7 @@ spec:
     - api:default/rekipe-recipe-mcp
   consumesApis:
     - api:default/rekipe-media-http
+    - api:default/rekipe-agent-mcp
   dependsOn:
     - resource:default/rekipe-recipe-mongodb
     - resource:default/rekipe-keycloak
@@ -52,7 +53,7 @@ spec:
     openapi: 3.1.0
     info:
       title: Rekipe Recipe REST API
-      version: 0.3.1
+      version: 0.4.0
     servers:
       - url: https://rekipe.amazone.lan/api/recipe
         description: Préproduction privée
@@ -78,6 +79,11 @@ spec:
           summary: Générer et rattacher l'image principale si nécessaire
           parameters: [{name: uuid, in: path, required: true, schema: {type: string, format: uuid}}]
           responses: {"200": {description: Recette avec image}}
+      /v1/recipes/{uuid}/ai-enrich:
+        post:
+          summary: Enrichir une recette via l'agent IA interne
+          parameters: [{name: uuid, in: path, required: true, schema: {type: string, format: uuid}}]
+          responses: {"200": {description: Recette enrichie}, "502": {description: Agent indisponible}}
 ---
 apiVersion: backstage.io/v1alpha1
 kind: API
@@ -97,4 +103,4 @@ spec:
     authentication: OAuth 2.1 Authorization Code with PKCE
     authorization_role: rekipe:mcp-access
     scopes: [recipes:read, recipes:write, recipes:image:generate, recipes:delete, recipes:admin]
-    tools: [create_recipe, get_recipe, update_recipe, patch_recipe, delete_recipe, duplicate_recipe, list_recipes, generate_recipe_image]
+    tools: [create_recipe, get_recipe, update_recipe, patch_recipe, delete_recipe, duplicate_recipe, list_recipes, generate_recipe_image, ai_enrich_recipe]
