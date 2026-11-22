@@ -200,6 +200,41 @@ class RecipeMCP:
                 **generated.model_dump(mode="json"),
             }
 
+        @secure_tool(self._mcp, WRITE_SCOPE, IMAGE_GENERATE_SCOPE)
+        async def ai_enrich_recipe(
+            uuid: Annotated[
+                str,
+                Field(
+                    description="UUID (UUIDv7) of the existing recipe to enrich in place.",
+                    examples=["01951234-5678-7abc-def0-123456789abc"],
+                ),
+            ],
+            generate_image: Annotated[
+                bool,
+                Field(
+                    default=True,
+                    description="Generate a main image when the recipe does not already have one.",
+                ),
+            ] = True,
+            ctx: fastmcp.Context | None = None,
+        ) -> dict:
+            """Enrich and reorganize an existing recipe through the internal AI agent."""
+            await inject_tenant_uri(ctx)
+            recipe, result = await service.enrich_with_ai(
+                to_uuid6(StdUUID(uuid)),
+                generate_image=generate_image,
+            )
+            hydrated = await service.hydrate_recipe(recipe)
+            logger.info(
+                "✅ Recipe enriched through internal AI agent via MCP",
+                uuid=uuid,
+                image_generated=result.image_generated,
+            )
+            return {
+                "recipe": RecipeSchema.model_validate(hydrated).model_dump(mode="json"),
+                **result.model_dump(mode="json"),
+            }
+
         @secure_tool(self._mcp, DELETE_SCOPE)
         async def delete_recipe(
             uuid: Annotated[

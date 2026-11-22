@@ -11,8 +11,10 @@ from adapters.output.memory.repositories.ingredient_repository import InMemoryIn
 from application.services.recipe_service import RecipeService
 from domain.models.equipment import Equipment
 from domain.models.generated_recipe_image import GeneratedRecipeImage
+from domain.models.recipe_ai_enrichment import RecipeAIEnrichment
 from domain.models.ingredient import Ingredient
 from domain.ports.output.recipe_image_generator import RecipeImageGenerator
+from domain.ports.output.recipe_ai_enrichment_agent import RecipeAIEnrichmentAgent
 from infrastructure.purge_registry import PurgeRegistry
 from uuid6 import UUID
 
@@ -91,13 +93,28 @@ def image_generator():
 
 
 @pytest.fixture
-def service(repo, ingredient_repo, equipment_repo, image_generator, logger):
+def ai_enrichment_agent():
+    agent = AsyncMock(spec=RecipeAIEnrichmentAgent)
+    agent.enrich.return_value = RecipeAIEnrichment(
+        recipe_uuid="recipe-1",
+        recipe_name="Farine",
+        formatted_response="Recette enrichie",
+        updated=True,
+        image_generated=False,
+        warnings=[],
+    )
+    return agent
+
+
+@pytest.fixture
+def service(repo, ingredient_repo, equipment_repo, image_generator, ai_enrichment_agent, logger):
     return RecipeService(
         repo,
         logger,
         ingredient_repository=ingredient_repo,
         equipment_repository=equipment_repo,
         image_generator=image_generator,
+        ai_enrichment_agent=ai_enrichment_agent,
     )
 
 
@@ -168,6 +185,25 @@ async def test_generate_recipe_image_maps_media_failure(client, image_generator)
     response = await client.post(f"/v1/recipes/{uuid}/main-image", json={})
 
     assert response.status_code == 502
+
+
+async def test_enrich_recipe_with_ai_uses_internal_agent(client, ai_enrichment_agent):
+    created = await client.post("/v1/recipes/", json=_complete_payload())
+    uuid = created.json()["data"]["uuid"]
+
+    response = await client.post(
+        f"/v1/recipes/{uuid}/ai-enrich",
+        json={"generate_image": False},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["updated"] is True
+    assert data["recipe"]["uuid"] == uuid
+    ai_enrichment_agent.enrich.assert_awaited_once_with(
+        recipe_uuid=uuid,
+        generate_image=False,
+    )
 
 
 async def test_require_auth_can_be_disabled_for_local_dev(monkeypatch):

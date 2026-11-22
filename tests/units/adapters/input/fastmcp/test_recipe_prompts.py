@@ -71,6 +71,7 @@ async def test_mcp_help_lists_tools(client):
     text = _text(await client.get_prompt("mcp_help", {}))
     assert "create_recipe" in text
     assert "list_recipes" in text
+    assert "ai_enrich_recipe" in text
     assert "purge_recipes" in text
 
 
@@ -86,4 +87,3 @@ async def test_mcp_help_lists_resources(client):
     assert "recipes://sample" in text
     assert "recipes://recent" in text
     assert "recipe://{uuid}" in text
-
