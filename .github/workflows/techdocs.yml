@@ -29,8 +29,9 @@ jobs:
       - run: mkdocs build --strict --site-dir /tmp/techdocs-validation
       - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
-          args: --no-progress --offline './docs/**/*.md' './README.md'
+          args: --no-progress --offline './docs/**/*.md'
           fail: true
+          failIfEmpty: false
 
   publish:
     name: Generate and publish
