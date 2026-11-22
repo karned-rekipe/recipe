@@ -1,0 +1,100 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: rekipe-recipe
+  title: Rekipe Recipe
+  description: Source de vérité des recettes, ingrédients, équipements et tags de Rekipe.
+  annotations:
+    github.com/project-slug: karned-rekipe/recipe
+    backstage.io/kubernetes-id: rekipe-recipe
+    backstage.io/kubernetes-namespace: rekipe
+    backstage.io/source-location: url:https://github.com/karned-rekipe/recipe/tree/main/
+    backstage.io/techdocs-ref: dir:.
+  tags: [arclith, fastapi, fastmcp, mongodb, python]
+  links:
+    - url: https://rekipe.amazone.lan/api/recipe/docs
+      title: OpenAPI préproduction
+      icon: web
+    - url: https://github.com/karned-rekipe/recipe
+      title: Dépôt applicatif
+      icon: github
+    - url: https://github.com/killiankopp/amazone-gitops-karned/tree/main/applications/rekipe
+      title: Déploiement GitOps
+      icon: github
+spec:
+  type: service
+  lifecycle: production
+  owner: user:default/skit
+  system: system:default/rekipe
+  providesApis:
+    - api:default/rekipe-recipe-http
+    - api:default/rekipe-recipe-mcp
+  consumesApis:
+    - api:default/rekipe-media-http
+  dependsOn:
+    - resource:default/rekipe-recipe-mongodb
+    - resource:default/rekipe-keycloak
+    - resource:default/kamazone-cluster
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: rekipe-recipe-http
+  title: Rekipe Recipe REST API
+  description: CRUD et recherche des recettes et catalogues du domaine cuisine.
+  tags: [fastapi, openapi, recipes]
+spec:
+  type: openapi
+  lifecycle: production
+  owner: user:default/skit
+  system: system:default/rekipe
+  definition: |
+    openapi: 3.1.0
+    info:
+      title: Rekipe Recipe REST API
+      version: 0.3.1
+    servers:
+      - url: https://rekipe.amazone.lan/api/recipe
+        description: Préproduction privée
+    paths:
+      /v1/recipes/:
+        get:
+          summary: Rechercher et paginer les recettes hydratées
+          responses: {"200": {description: Page de recettes}}
+        post:
+          summary: Créer une recette
+          responses: {"201": {description: Recette créée}}
+      /v1/recipes/{uuid}:
+        get:
+          summary: Lire une recette
+          parameters: [{name: uuid, in: path, required: true, schema: {type: string, format: uuid}}]
+          responses: {"200": {description: Recette}, "404": {description: Inconnue}}
+        patch:
+          summary: Modifier partiellement une recette
+          parameters: [{name: uuid, in: path, required: true, schema: {type: string, format: uuid}}]
+          responses: {"200": {description: Recette modifiée}}
+      /v1/recipes/{uuid}/main-image:
+        post:
+          summary: Générer et rattacher l'image principale si nécessaire
+          parameters: [{name: uuid, in: path, required: true, schema: {type: string, format: uuid}}]
+          responses: {"200": {description: Recette avec image}}
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: rekipe-recipe-mcp
+  title: Rekipe Recipe MCP
+  description: Outils métier de lecture, écriture, recherche et génération d'image, protégés par OAuth 2.1.
+  tags: [fastmcp, mcp, oauth2, recipes]
+spec:
+  type: mcp
+  lifecycle: production
+  owner: user:default/skit
+  system: system:default/rekipe
+  definition: |
+    transport: streamable-http
+    endpoint: https://rekipe.amazone.lan/api/recipe-mcp/mcp
+    authentication: OAuth 2.1 Authorization Code with PKCE
+    authorization_role: rekipe:mcp-access
+    scopes: [recipes:read, recipes:write, recipes:image:generate, recipes:delete, recipes:admin]
+    tools: [create_recipe, get_recipe, update_recipe, patch_recipe, delete_recipe, duplicate_recipe, list_recipes, generate_recipe_image]

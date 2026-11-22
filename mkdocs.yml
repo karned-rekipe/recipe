@@ -1,0 +1,22 @@
+site_name: Rekipe Recipe
+site_description: Service métier et contrats REST/MCP des recettes Rekipe
+repo_url: https://github.com/karned-rekipe/recipe
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  language: fr
+  font: false
+
+plugins:
+  - techdocs-core
+
+nav:
+  - Vue d'ensemble: backstage/index.md
+  - Architecture: backstage/architecture.md
+  - API et MCP: backstage/api.md
+  - Déploiement: backstage/deployment.md
+  - Exploitation: backstage/operations.md
+  - Authentification MCP: mcp-auth.md
+  - Conventions HTTP: http-conventions.md
+  - Guide agent: agent.md
