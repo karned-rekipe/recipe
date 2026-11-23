@@ -8,6 +8,8 @@ _COUNTRY_CODE_ALIASES = {
 
 
 class Country(str, Enum):
+    """ISO 3166-1 alpha-2 countries and territories."""
+
     AF = "AF"  # Afghanistan
     AL = "AL"  # Albania
     DZ = "DZ"  # Algeria
@@ -202,6 +204,63 @@ class Country(str, Enum):
     YE = "YE"  # Yemen
     ZM = "ZM"  # Zambia
     ZW = "ZW"  # Zimbabwe
+
+    # ISO-assigned territories omitted from the original country list.
+    AI = "AI"  # Anguilla
+    AQ = "AQ"  # Antarctica
+    AS = "AS"  # American Samoa
+    AW = "AW"  # Aruba
+    AX = "AX"  # Åland Islands
+    BL = "BL"  # Saint Barthélemy
+    BM = "BM"  # Bermuda
+    BQ = "BQ"  # Bonaire, Sint Eustatius and Saba
+    BV = "BV"  # Bouvet Island
+    CC = "CC"  # Cocos (Keeling) Islands
+    CK = "CK"  # Cook Islands
+    CW = "CW"  # Curaçao
+    CX = "CX"  # Christmas Island
+    EH = "EH"  # Western Sahara
+    FK = "FK"  # Falkland Islands (Malvinas)
+    FO = "FO"  # Faroe Islands
+    GF = "GF"  # French Guiana
+    GG = "GG"  # Guernsey
+    GI = "GI"  # Gibraltar
+    GL = "GL"  # Greenland
+    GP = "GP"  # Guadeloupe
+    GS = "GS"  # South Georgia and the South Sandwich Islands
+    GU = "GU"  # Guam
+    HK = "HK"  # Hong Kong
+    HM = "HM"  # Heard Island and McDonald Islands
+    IM = "IM"  # Isle of Man
+    IO = "IO"  # British Indian Ocean Territory
+    JE = "JE"  # Jersey
+    KY = "KY"  # Cayman Islands
+    MF = "MF"  # Saint Martin (French part)
+    MO = "MO"  # Macao
+    MP = "MP"  # Northern Mariana Islands
+    MQ = "MQ"  # Martinique
+    MS = "MS"  # Montserrat
+    NC = "NC"  # New Caledonia
+    NF = "NF"  # Norfolk Island
+    NU = "NU"  # Niue
+    PF = "PF"  # French Polynesia
+    PM = "PM"  # Saint Pierre and Miquelon
+    PN = "PN"  # Pitcairn
+    PR = "PR"  # Puerto Rico
+    PS = "PS"  # Palestine, State of
+    RE = "RE"  # Réunion
+    SH = "SH"  # Saint Helena, Ascension and Tristan da Cunha
+    SJ = "SJ"  # Svalbard and Jan Mayen
+    SX = "SX"  # Sint Maarten (Dutch part)
+    TC = "TC"  # Turks and Caicos Islands
+    TF = "TF"  # French Southern Territories
+    TK = "TK"  # Tokelau
+    UM = "UM"  # United States Minor Outlying Islands
+    VA = "VA"  # Holy See
+    VG = "VG"  # Virgin Islands, British
+    VI = "VI"  # Virgin Islands, U.S.
+    WF = "WF"  # Wallis and Futuna
+    YT = "YT"  # Mayotte
 
 
 def normalize_country_code(value: str | None) -> Country | None:

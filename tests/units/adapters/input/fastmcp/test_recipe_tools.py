@@ -179,12 +179,14 @@ async def test_get_not_found_returns_none(client):
 
 async def test_normalize_origin_country_returns_supported_code_without_failing(client):
     normalized = await client.call_tool("normalize_origin_country", {"origin_country": "uk"})
+    guadeloupe = await client.call_tool("normalize_origin_country", {"origin_country": "GP"})
     unsupported = await client.call_tool("normalize_origin_country", {"origin_country": "XK"})
 
     assert _data(normalized) == {
         "origin_country": "GB",
         "warning": "Le code pays IA 'uk' a été normalisé en 'GB'.",
     }
+    assert _data(guadeloupe) == {"origin_country": "GP", "warning": None}
     assert _data(unsupported)["origin_country"] is None
     assert "a été ignoré" in _data(unsupported)["warning"]
 
