@@ -1,6 +1,12 @@
 from enum import Enum
 
 
+_COUNTRY_CODE_ALIASES = {
+    "EL": "GR",
+    "UK": "GB",
+}
+
+
 class Country(str, Enum):
     AF = "AF"  # Afghanistan
     AL = "AL"  # Albania
@@ -196,3 +202,16 @@ class Country(str, Enum):
     YE = "YE"  # Yemen
     ZM = "ZM"  # Zambia
     ZW = "ZW"  # Zimbabwe
+
+
+def normalize_country_code(value: str | None) -> Country | None:
+    """Return the supported ISO country represented by an untrusted code."""
+    if value is None:
+        return None
+    candidate = value.strip().upper()
+    if not candidate:
+        return None
+    try:
+        return Country(_COUNTRY_CODE_ALIASES.get(candidate, candidate))
+    except ValueError:
+        return None

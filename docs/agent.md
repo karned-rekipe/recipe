@@ -40,6 +40,8 @@ Le serveur expose notamment :
 
 - `create_recipe` : créer un agrégat recette complet ;
 - `get_recipe` : lire une recette par UUID ;
+- `normalize_origin_country` : normaliser un code pays IA sans bloquer une
+  recette lorsque le code est inconnu ;
 - `update_recipe` : remplacer une recette ;
 - `patch_recipe` : modifier partiellement une recette ;
 - `generate_recipe_image` : générer et rattacher l'image principale via le
@@ -202,5 +204,6 @@ print([tool.name for tool in asyncio.run(mcp.list_tools())])
 ```
 
 La liste doit contenir au minimum `list_recipes`, `get_recipe`,
-`create_recipe`, `patch_recipe`, `generate_recipe_image`, `ai_enrich_recipe`
+`create_recipe`, `patch_recipe`, `generate_recipe_image`, `ai_enrich_recipe`,
+`normalize_origin_country`
 et `delete_recipe`.

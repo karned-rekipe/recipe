@@ -157,6 +157,17 @@ class RecipeStepWriteSchema(BaseModel):
         return v
 
 
+class CountryNormalizationSchema(BaseModel):
+    origin_country: Country | None = Field(
+        None,
+        description="Normalized ISO 3166-1 alpha-2 country code, or null when unsupported.",
+    )
+    warning: str | None = Field(
+        None,
+        description="Non-blocking warning emitted when the submitted country code is changed or ignored.",
+    )
+
+
 class RecipeCreateSchema(BaseModel):
     name: str = Field(
         ...,

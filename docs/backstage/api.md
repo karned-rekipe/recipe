@@ -16,6 +16,10 @@ protégée.
 les filtres du catalogue, dont `has_main_image`, avec une pagination bornée à
 200 éléments.
 
+`normalize_origin_country` normalise un code pays non fiable produit par une
+IA. Une valeur incompatible est renvoyée à `null` avec un avertissement, sans
+faire échouer l'enrichissement de la recette.
+
 `ai_enrich_recipe` requiert les scopes `recipes:write` et
 `recipes:image:generate`. Il sélectionne les tags uniquement dans le catalogue
 Recipe existant et conserve les associations déjà présentes.
