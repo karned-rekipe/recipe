@@ -103,4 +103,4 @@ spec:
     authentication: OAuth 2.1 Authorization Code with PKCE
     authorization_role: rekipe:mcp-access
     scopes: [recipes:read, recipes:write, recipes:image:generate, recipes:delete, recipes:admin]
-    tools: [create_recipe, get_recipe, update_recipe, patch_recipe, delete_recipe, duplicate_recipe, list_recipes, generate_recipe_image, ai_enrich_recipe]
+    tools: [create_recipe, get_recipe, normalize_origin_country, update_recipe, patch_recipe, delete_recipe, duplicate_recipe, list_recipes, generate_recipe_image, ai_enrich_recipe]

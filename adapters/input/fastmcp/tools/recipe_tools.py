@@ -13,6 +13,7 @@ from adapters.input.fastmcp.authorization import (
 )
 from adapters.input.fastmcp.dependencies import inject_tenant_uri
 from adapters.input.schemas.recipe_schema import (
+    CountryNormalizationSchema,
     RecipeCreateSchema,
     RecipePatchSchema,
     RecipeSchema,
@@ -23,6 +24,7 @@ from adapters.input.schemas.recipe_schema import (
 )
 from application.services.recipe_service import RecipeService
 from arclith.domain.ports.logger import Logger
+from domain.models.country import normalize_country_code
 from domain.models.recipe import RecipeStatus
 
 
@@ -98,6 +100,35 @@ class RecipeMCP:
                 return None
             logger.info("✅ Recipe fetched via MCP", uuid=uuid, name=result.name)
             return RecipeSchema.model_validate(await service.hydrate_recipe(result)).model_dump(mode="json")
+
+        @secure_tool(self._mcp)
+        async def normalize_origin_country(
+            origin_country: Annotated[
+                str | None,
+                Field(
+                    default=None,
+                    description="Untrusted country code proposed by an AI model. Unsupported values are ignored.",
+                    examples=["FR", "UK", "XK", None],
+                ),
+            ] = None,
+            ctx: fastmcp.Context | None = None,
+        ) -> dict:
+            """Normalize an AI country code without blocking a recipe enrichment."""
+            await inject_tenant_uri(ctx)
+            normalized = normalize_country_code(origin_country)
+            submitted = origin_country.strip() if origin_country is not None else ""
+            warning = None
+            if submitted and normalized is None:
+                warning = (
+                    f"Le code pays IA {submitted!r} est inconnu ou incompatible ; "
+                    "le pays d'origine a été ignoré."
+                )
+            elif normalized is not None and submitted.upper() != normalized.value:
+                warning = f"Le code pays IA {submitted!r} a été normalisé en {normalized.value!r}."
+            return CountryNormalizationSchema(
+                origin_country=normalized,
+                warning=warning,
+            ).model_dump(mode="json")
 
         @secure_tool(self._mcp, WRITE_SCOPE)
         async def update_recipe(
