@@ -46,6 +46,12 @@ class Recipe(Entity):
         description="Recipe name, normalized (leading/trailing spaces removed).",
         examples=["recipe 1", "recipe 2"],
     )
+    subtitle: str | None = Field(
+        None,
+        description="Optional editorial subtitle displayed separately from the recipe name.",
+        max_length=160,
+        examples=["Tarte citron meringuée"],
+    )
     description: str | None = Field(
         None,
         description="Detailed description of the recipe.",
@@ -106,6 +112,14 @@ class Recipe(Entity):
         if not stripped:
             raise ValueError("Recipe name cannot be empty")
         return stripped
+
+    @field_validator("subtitle", mode="before")
+    @classmethod
+    def normalize_subtitle(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
 
     @field_validator("tag_uuids", mode="before")
     @classmethod

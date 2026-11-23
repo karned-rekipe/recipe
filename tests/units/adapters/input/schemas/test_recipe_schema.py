@@ -44,11 +44,15 @@ def _payload(**kwargs) -> dict:
 
 
 def test_create_schema_valid():
-    s = RecipeCreateSchema(**_payload())
+    s = RecipeCreateSchema(**_payload(subtitle="Tarte citron meringuée"))
     assert s.name == "Farine"
+    assert s.subtitle == "Tarte citron meringuée"
     assert s.servings == 4
     assert len(s.ingredients) == 1
     assert len(s.steps) == 1
+
+    recipe = recipe_create_payload_to_domain(s)
+    assert recipe.subtitle == "Tarte citron meringuée"
 
 
 def test_create_schema_accepts_components():
@@ -112,8 +116,17 @@ def test_patch_schema_all_none():
 
 
 def test_patch_schema_partial():
-    s = RecipePatchSchema(name="Farine complete")
+    s = RecipePatchSchema(name="Farine complete", subtitle="Farine de caractère")
     assert s.name == "Farine complete"
+    assert s.subtitle == "Farine de caractère"
+
+
+def test_patch_payload_can_clear_subtitle():
+    existing = Recipe(name="Farine", subtitle="Farine de caractère")
+
+    patched = recipe_patch_payload_to_domain(existing, RecipePatchSchema(subtitle=None))
+
+    assert patched.subtitle is None
 
 
 def test_patch_schema_null_collection_raises():
@@ -167,6 +180,7 @@ def test_patch_payload_generates_component_uuid_when_omitted():
 def test_recipe_schema_from_entity():
     entity = Recipe(
         name="Farine",
+        subtitle="Farine de caractère",
         servings=4,
         favorite=True,
         legacy_id=42,
@@ -191,6 +205,7 @@ def test_recipe_schema_from_entity():
     payload["equipment"] = [{"equipment_uuid": EQUIPMENT_UUID, "name": "Saladier", "quantity": 1}]
     schema = RecipeSchema.model_validate(payload)
     assert schema.name == "Farine"
+    assert schema.subtitle == "Farine de caractère"
     assert schema.ingredients[0].name == "Farine de ble"
     assert schema.equipment[0].name == "Saladier"
     assert schema.steps[0].name == "Melanger"
@@ -248,6 +263,7 @@ def test_patch_payload_to_domain_preserves_unset_sections():
 def test_update_payload_to_domain_preserves_unset_migration_metadata():
     existing = Recipe(
         name="Farine",
+        subtitle="Farine de caractère",
         servings=4,
         favorite=True,
         legacy_id=42,
@@ -262,6 +278,7 @@ def test_update_payload_to_domain_preserves_unset_migration_metadata():
     updated = recipe_update_payload_to_domain(existing, RecipeUpdateSchema(**_payload(name="Farine T80")))
 
     assert updated.name == "Farine T80"
+    assert updated.subtitle == "Farine de caractère"
     assert updated.favorite is True
     assert updated.legacy_id == 42
     assert updated.status == RecipeStatus.active
