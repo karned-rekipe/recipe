@@ -126,6 +126,44 @@ def test_update_schema_valid():
     assert s.name == "Sel fin"
 
 
+def test_update_payload_generates_component_uuid_when_omitted():
+    child_uuid = "01951234-5678-7abc-def0-000000000201"
+    existing = Recipe(name="Farine", servings=4)
+    payload = RecipeUpdateSchema(
+        **_payload(
+            components=[{
+                "recipe_uuid": child_uuid,
+                "label": "Crème anglaise",
+                "rank": 1,
+            }]
+        )
+    )
+
+    updated = recipe_update_payload_to_domain(existing, payload)
+
+    assert len(updated.components) == 1
+    assert updated.components[0].uuid is not None
+    assert str(updated.components[0].recipe_uuid) == child_uuid
+
+
+def test_patch_payload_generates_component_uuid_when_omitted():
+    child_uuid = "01951234-5678-7abc-def0-000000000201"
+    existing = Recipe(name="Farine", servings=4)
+    payload = RecipePatchSchema(
+        components=[{
+            "recipe_uuid": child_uuid,
+            "label": "Crème anglaise",
+            "rank": 1,
+        }]
+    )
+
+    updated = recipe_patch_payload_to_domain(existing, payload)
+
+    assert len(updated.components) == 1
+    assert updated.components[0].uuid is not None
+    assert str(updated.components[0].recipe_uuid) == child_uuid
+
+
 def test_recipe_schema_from_entity():
     entity = Recipe(
         name="Farine",

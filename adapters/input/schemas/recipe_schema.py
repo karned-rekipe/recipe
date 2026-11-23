@@ -480,7 +480,10 @@ def _convert_sources(values: dict[str, Any]) -> None:
 
 def _convert_components(values: dict[str, Any]) -> None:
     if "components" in values:
-        values["components"] = [RecipeComponent(**component) for component in values["components"]]
+        values["components"] = [
+            _to_recipe_component(RecipeComponentWriteSchema.model_validate(component))
+            for component in values["components"]
+        ]
 
 
 def _convert_ingredients(values: dict[str, Any]) -> None:
