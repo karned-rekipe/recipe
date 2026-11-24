@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 
 
-class StoredRecipeImage(BaseModel):
+class StoredImage(BaseModel):
     bucket: str
     key: str
     url: str
@@ -9,6 +9,6 @@ class StoredRecipeImage(BaseModel):
     size_bytes: int = Field(ge=0)
 
 
-class GeneratedRecipeImage(BaseModel):
-    image: StoredRecipeImage
+class GeneratedImage(BaseModel):
+    image: StoredImage
     provider: str

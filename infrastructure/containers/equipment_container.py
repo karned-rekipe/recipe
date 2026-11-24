@@ -10,6 +10,7 @@ from arclith.domain.ports.repository import Repository
 from arclith.infrastructure.config import AppConfig
 from domain.models.equipment import Equipment
 from domain.ports.output.equipment_repository import EquipmentRepository
+from domain.ports.output.image_generator import ImageGenerator
 
 
 def _build_memory(cfg: AppConfig, log: Logger) -> Repository[Equipment]:
@@ -45,7 +46,15 @@ _registry = cast(
 )
 
 
-def build_equipment_service(arclith: Arclith) -> tuple[EquipmentService, Logger]:
+def build_equipment_service(
+    arclith: Arclith,
+    image_generator: ImageGenerator | None = None,
+) -> tuple[EquipmentService, Logger]:
     arclith.logger.info("🗄️ Equipment repository adapter selected", adapter=arclith.config.adapters.repository)
     repo: EquipmentRepository = cast(EquipmentRepository, _registry.build(arclith.config, arclith.logger))
-    return EquipmentService(repo, arclith.logger, arclith.config.soft_delete.retention_days), arclith.logger
+    return EquipmentService(
+        repo,
+        arclith.logger,
+        arclith.config.soft_delete.retention_days,
+        image_generator=image_generator,
+    ), arclith.logger

@@ -1,3 +1,3 @@
-from .recipe_image_generator import MediaRecipeImageGenerator
+from .image_generator import MediaImageGenerator
 
-__all__ = ["MediaRecipeImageGenerator"]
+__all__ = ["MediaImageGenerator"]

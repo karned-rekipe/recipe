@@ -8,6 +8,7 @@ from application.services.ingredient_enrichment_suggestion_service import (
 )
 from domain.models.ingredient import Ingredient, MediaProfile, NutritionProfile
 from domain.models.ingredient_enrichment_suggestion import IngredientEnrichmentSuggestion
+from uuid6 import UUID
 
 
 async def test_create_suggestion_requires_existing_ingredient(logger):
@@ -107,6 +108,74 @@ async def test_create_suggestion_reuses_equivalent_pending_suggestion(logger):
     assert len(suggestions) == 1
     assert updated is not None
     assert str(updated.enrichment_profile.last_run_uuid) == "01951234-5678-7abc-def0-000000000003"
+
+
+async def test_find_suggested_media_profiles_returns_latest_unresolved_image(logger):
+    ingredient_repo = InMemoryIngredientRepository()
+    ingredient = await ingredient_repo.create(Ingredient(name="Carotte"))
+    suggestion_repo = InMemoryIngredientEnrichmentSuggestionRepository()
+    service = IngredientEnrichmentSuggestionService(suggestion_repo, ingredient_repo, logger)
+    await service.create(
+        IngredientEnrichmentSuggestion(
+            uuid=UUID("01951234-5678-7abc-def0-000000000010"),
+            ingredient_uuid=ingredient.uuid,
+            run_uuid="01951234-5678-7abc-def0-000000000002",
+            proposed_patch={
+                "media_profile": {
+                    "main_image_uri": "media://carotte-ancienne.png",
+                    "image_status": "generated",
+                    "source": "ai",
+                },
+            },
+        )
+    )
+    latest = await service.create(
+        IngredientEnrichmentSuggestion(
+            uuid=UUID("01951234-5678-7abc-def0-000000000020"),
+            ingredient_uuid=ingredient.uuid,
+            run_uuid="01951234-5678-7abc-def0-000000000003",
+            proposed_patch={
+                "media_profile": {
+                    "main_image_uri": "media://carotte-recente.png",
+                    "image_status": "generated",
+                    "source": "ai",
+                    "validated": True,
+                },
+                "nutrition_profile": {"nutri_score": "A", "kcal_per_100g": 41},
+            },
+        )
+    )
+    await service.reject(ingredient.uuid, latest.uuid, fields=["nutrition_profile"])
+
+    profiles = await service.find_suggested_media_profiles([ingredient.uuid])
+
+    assert profiles[str(ingredient.uuid)].main_image_uri == "media://carotte-recente.png"
+    assert profiles[str(ingredient.uuid)].validated is False
+
+
+async def test_find_suggested_media_profiles_ignores_resolved_image(logger):
+    ingredient_repo = InMemoryIngredientRepository()
+    ingredient = await ingredient_repo.create(Ingredient(name="Carotte"))
+    suggestion_repo = InMemoryIngredientEnrichmentSuggestionRepository()
+    service = IngredientEnrichmentSuggestionService(suggestion_repo, ingredient_repo, logger)
+    suggestion = await service.create(
+        IngredientEnrichmentSuggestion(
+            ingredient_uuid=ingredient.uuid,
+            run_uuid="01951234-5678-7abc-def0-000000000002",
+            proposed_patch={
+                "media_profile": {
+                    "main_image_uri": "media://carotte.png",
+                    "image_status": "generated",
+                    "source": "ai",
+                },
+            },
+        )
+    )
+    await service.reject(ingredient.uuid, suggestion.uuid, fields=["media_profile"])
+
+    profiles = await service.find_suggested_media_profiles([ingredient.uuid])
+
+    assert profiles == {}
 
 
 async def test_apply_suggestion_updates_unvalidated_profile(logger):

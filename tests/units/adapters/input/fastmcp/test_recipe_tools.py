@@ -9,10 +9,10 @@ from adapters.output.memory.repositories.equipment_repository import InMemoryEqu
 from adapters.output.memory.repositories.ingredient_repository import InMemoryIngredientRepository
 from application.services.recipe_service import RecipeService
 from domain.models.equipment import Equipment
-from domain.models.generated_recipe_image import GeneratedRecipeImage
+from domain.models.generated_image import GeneratedImage
 from domain.models.recipe_ai_enrichment import RecipeAIEnrichment
 from domain.models.ingredient import Ingredient
-from domain.ports.output.recipe_image_generator import RecipeImageGenerator
+from domain.ports.output.image_generator import ImageGenerator
 from domain.ports.output.recipe_ai_enrichment_agent import RecipeAIEnrichmentAgent
 from uuid6 import UUID
 
@@ -77,8 +77,8 @@ def equipment_repo():
 
 @pytest.fixture
 def image_generator():
-    generator = AsyncMock(spec=RecipeImageGenerator)
-    generator.generate.return_value = GeneratedRecipeImage.model_validate({
+    generator = AsyncMock(spec=ImageGenerator)
+    generator.generate.return_value = GeneratedImage.model_validate({
         "image": {
             "bucket": "recipes",
             "key": "recipes/generated.png",
@@ -254,12 +254,12 @@ async def test_generate_recipe_image_attaches_media_result(client, created_uuid,
     assert data["provider"] == "test"
     assert data["image"]["content_type"] == "image/png"
     assert data["recipe"]["main_image"] == data["image"]["url"]
-    image_generator.generate.assert_awaited_once_with(
-        recipe_uuid=created_uuid,
-        recipe_name="Farine",
-        ingredients=["Farine de ble"],
-        prompt=None,
-    )
+    image_generator.generate.assert_awaited_once()
+    call = image_generator.generate.await_args.kwargs
+    assert call["bucket"] == "recipes"
+    assert call["object_prefix"] == f"recipes/{created_uuid}/main"
+    assert "Farine" in call["brief"]
+    assert "Farine de ble" in call["brief"]
 
 
 async def test_ai_enrich_recipe_delegates_to_internal_agent(

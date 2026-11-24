@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from arclith.adapters.input.schemas.base_schema import BaseSchema
 from domain.models.country import Country
-from domain.models.generated_recipe_image import GeneratedRecipeImage
+from domain.models.generated_image import GeneratedImage
 from domain.models.meal_category import MealCategory
 from domain.models.recipe import MealType, Recipe, RecipeQualityStatus, RecipeStatus, Source
 from domain.models.recipe_component import RecipeComponent
@@ -309,11 +309,8 @@ class RecipePatchSchema(BaseModel):
 
 
 class RecipeImageGenerationRequestSchema(BaseModel):
-    prompt: str | None = Field(
-        None,
-        max_length=4000,
-        description="Prompt optionnel. Media en construit un depuis la recette s'il est absent.",
-    )
+    model_config = ConfigDict(extra="forbid")
+
     replace_existing: bool = Field(
         False,
         description="Autorise le remplacement d'une image principale existante.",
@@ -400,7 +397,7 @@ class RecipeSchema(BaseSchema):
     )
 
 
-class RecipeImageGenerationResponseSchema(GeneratedRecipeImage):
+class RecipeImageGenerationResponseSchema(GeneratedImage):
     recipe: RecipeSchema
 
 

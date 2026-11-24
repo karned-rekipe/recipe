@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from uuid import UUID as StdUUID
 
 from arclith.adapters.input.schemas.base_schema import BaseSchema
@@ -15,6 +15,7 @@ from domain.models.ingredient import (
     SustainabilityProfile,
     UnitProfile,
 )
+from domain.models.ingredient_image_generation import IngredientImageGeneration
 
 
 class IngredientCreateSchema(BaseModel):
@@ -132,6 +133,14 @@ class IngredientUnitConversionResponseSchema(BaseModel):
     source: str
 
 
+class IngredientImageGenerationResponseSchema(IngredientImageGeneration):
+    """Reviewable image suggestion created by the internal ingredient agent."""
+
+
+class IngredientImageGenerationRequestSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
 class IngredientSchema(BaseSchema):
     name: str = Field(..., description="Ingredient name.", examples=["Tomate"])
     rayon_uuid: StdUUID | None = Field(None, description="Shelf/aisle UUID.")
@@ -145,6 +154,10 @@ class IngredientSchema(BaseSchema):
     quantity: float | None = Field(None, description="Default quantity.")
     season_months: dict[int, int] = Field(default_factory=dict, description="Seasonality map.")
     media_profile: MediaProfile = Field(default_factory=MediaProfile)
+    suggested_media_profile: MediaProfile | None = Field(
+        None,
+        description="Latest unresolved image suggestion, exposed as a durable preview without applying it.",
+    )
     seasonality_profile: SeasonalityProfile = Field(default_factory=SeasonalityProfile)
     nutrition_profile: NutritionProfile = Field(default_factory=NutritionProfile)
     sustainability_profile: SustainabilityProfile = Field(default_factory=SustainabilityProfile)

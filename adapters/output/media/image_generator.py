@@ -6,12 +6,12 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlsplit
 from urllib.request import Request, urlopen
 
-from domain.models.generated_recipe_image import GeneratedRecipeImage
-from domain.ports.output.recipe_image_generator import RecipeImageGenerator
+from domain.models.generated_image import GeneratedImage
+from domain.ports.output.image_generator import ImageGenerator
 from pydantic import ValidationError
 
 
-class MediaRecipeImageGenerator(RecipeImageGenerator):
+class MediaImageGenerator(ImageGenerator):
     def __init__(self, base_url: str, timeout_seconds: float = 120.0) -> None:
         normalized_url = base_url.rstrip("/") + "/"
         scheme = urlsplit(normalized_url).scheme
@@ -23,26 +23,26 @@ class MediaRecipeImageGenerator(RecipeImageGenerator):
     async def generate(
         self,
         *,
-        recipe_uuid: str,
-        recipe_name: str,
-        ingredients: list[str],
-        prompt: str | None = None,
-    ) -> GeneratedRecipeImage:
-        payload: dict[str, object] = {
-            "recipe_uuid": recipe_uuid,
-            "recipe_name": recipe_name,
-            "ingredients": ingredients,
-            "prompt": prompt,
-        }
-        response_payload = await asyncio.to_thread(self._post_json, payload)
+        brief: str,
+        bucket: str,
+        object_prefix: str,
+    ) -> GeneratedImage:
+        response_payload = await asyncio.to_thread(
+            self._post_json,
+            {
+                "brief": brief,
+                "bucket": bucket,
+                "object_prefix": object_prefix,
+            },
+        )
         try:
-            return GeneratedRecipeImage.model_validate(response_payload)
+            return GeneratedImage.model_validate(response_payload)
         except ValidationError as exc:
             raise RuntimeError("Media service returned an invalid image payload") from exc
 
     def _post_json(self, payload: dict[str, object]) -> object:
         request = Request(
-            urljoin(self._base_url, "v1/recipe-images/generate"),
+            urljoin(self._base_url, "v1/images/generate"),
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
             method="POST",

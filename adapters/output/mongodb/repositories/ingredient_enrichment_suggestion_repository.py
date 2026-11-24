@@ -35,3 +35,21 @@ class MongoDBIngredientEnrichmentSuggestionRepository(
                     {"ingredient_uuid": str(ingredient_uuid), "status": "pending", "deleted_at": None}
                 )
             ]
+
+    async def find_active_by_ingredient_uuids(
+        self,
+        ingredient_uuids: list[UUID],
+    ) -> list[IngredientEnrichmentSuggestion]:
+        if not ingredient_uuids:
+            return []
+        async with self._collection() as col:
+            return [
+                self._from_doc(doc)
+                async for doc in col.find(
+                    {
+                        "ingredient_uuid": {"$in": [str(ingredient_uuid) for ingredient_uuid in ingredient_uuids]},
+                        "status": {"$in": ["pending", "partially_applied"]},
+                        "deleted_at": None,
+                    }
+                )
+            ]

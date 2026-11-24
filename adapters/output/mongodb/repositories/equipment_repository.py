@@ -1,15 +1,85 @@
 import re
+from datetime import datetime, timezone
+from typing import Any
 
 from arclith.adapters.output.mongodb.config import MongoDBConfig
 from arclith.adapters.output.mongodb.repository import MongoDBRepository
 from arclith.domain.ports.logger import Logger
 from domain.models.equipment import Equipment
 from domain.ports.output.equipment_repository import EquipmentRepository
+from pymongo import ReturnDocument
+from uuid6 import UUID
 
 
 class MongoDBEquipmentRepository(MongoDBRepository[Equipment], EquipmentRepository):
     def __init__(self, config: MongoDBConfig, logger: Logger) -> None:
         super().__init__(config, Equipment, logger)
+
+    async def reserve_image_generation(
+        self,
+        equipment_uuid: UUID,
+        reservation_id: str,
+        expires_at: datetime,
+        *,
+        replace_existing: bool,
+    ) -> Equipment | None:
+        match: dict[str, Any] = {
+            "_id": str(equipment_uuid),
+            "deleted_at": None,
+            "$or": [
+                {"image_generation_reservation": {"$exists": False}},
+                {"image_generation_reservation.expires_at": {"$lte": datetime.now(timezone.utc)}},
+            ],
+        }
+        if not replace_existing:
+            match["main_image"] = {"$not": {"$regex": r"\S"}}
+        async with self._collection() as col:
+            doc = await col.find_one_and_update(
+                match,
+                {"$set": {"image_generation_reservation": {"id": reservation_id, "expires_at": expires_at}}},
+                return_document=ReturnDocument.AFTER,
+            )
+        return self._from_doc(doc) if doc is not None else None
+
+    async def complete_image_generation(
+        self,
+        equipment_uuid: UUID,
+        reservation_id: str,
+        image_url: str,
+        *,
+        replace_existing: bool,
+    ) -> Equipment | None:
+        match: dict[str, Any] = {
+            "_id": str(equipment_uuid),
+            "deleted_at": None,
+            "image_generation_reservation.id": reservation_id,
+        }
+        if not replace_existing:
+            match["main_image"] = {"$not": {"$regex": r"\S"}}
+        async with self._collection() as col:
+            doc = await col.find_one_and_update(
+                match,
+                {
+                    "$set": {
+                        "main_image": image_url,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                    "$inc": {"version": 1},
+                    "$unset": {"image_generation_reservation": ""},
+                },
+                return_document=ReturnDocument.AFTER,
+            )
+        return self._from_doc(doc) if doc is not None else None
+
+    async def release_image_generation(self, equipment_uuid: UUID, reservation_id: str) -> None:
+        async with self._collection() as col:
+            await col.update_one(
+                {
+                    "_id": str(equipment_uuid),
+                    "image_generation_reservation.id": reservation_id,
+                },
+                {"$unset": {"image_generation_reservation": ""}},
+            )
 
     async def find_by_name(self, name: str) -> list[Equipment]:
         async with self._collection() as col:

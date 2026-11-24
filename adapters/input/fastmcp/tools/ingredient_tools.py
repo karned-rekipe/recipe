@@ -2,7 +2,7 @@ import fastmcp
 from pydantic import Field
 from uuid6 import UUID
 
-from adapters.input.fastmcp.authorization import DELETE_SCOPE, WRITE_SCOPE, secure_tool
+from adapters.input.fastmcp.authorization import DELETE_SCOPE, IMAGE_GENERATE_SCOPE, WRITE_SCOPE, secure_tool
 from adapters.input.fastmcp.dependencies import inject_tenant_uri
 from adapters.input.schemas.ingredient_enrichment_suggestion_schema import IngredientEnrichmentSuggestionSchema
 from adapters.input.schemas.ingredient_schema import IngredientSchema
@@ -43,6 +43,19 @@ class IngredientMCP:
         recipe_service = self._recipe_service
         suggestion_service = self._suggestion_service
         to_uuid6 = self._to_uuid6
+
+        async def hydrate_ingredients_with_media_previews(items: list[Ingredient]) -> list[dict]:
+            items_without_image = [
+                item
+                for item in items
+                if not item.media_profile.main_image_uri or not item.media_profile.main_image_uri.strip()
+            ]
+            suggested_media_profiles = (
+                await suggestion_service.find_suggested_media_profiles([item.uuid for item in items_without_image])
+                if suggestion_service is not None and items_without_image
+                else {}
+            )
+            return await service.hydrate_ingredients(items, suggested_media_profiles)
 
         @secure_tool(self._mcp, WRITE_SCOPE)
         async def create_ingredient(
@@ -95,7 +108,8 @@ class IngredientMCP:
                 logger.warning("⚠️ Ingredient not found via MCP", uuid=uuid)
                 return None
             logger.info("✅ Ingredient fetched via MCP", uuid=uuid, name=result.name)
-            return IngredientSchema.model_validate(result).model_dump()
+            hydrated = (await hydrate_ingredients_with_media_previews([result]))[0]
+            return IngredientSchema.model_validate(hydrated).model_dump()
 
         @secure_tool(self._mcp, WRITE_SCOPE)
         async def update_ingredient(
@@ -167,13 +181,38 @@ class IngredientMCP:
             await inject_tenant_uri(ctx)
             items = await service.find_by_name(name) if name else await service.find_all()
             logger.info("✅ Ingredients listed via MCP", count=len(items), filter=name)
-            return [IngredientSchema.model_validate(i).model_dump() for i in items]
+            hydrated = await hydrate_ingredients_with_media_previews(items)
+            return [IngredientSchema.model_validate(item).model_dump() for item in hydrated]
 
         @secure_tool(self._mcp)
         async def list_units(ctx: fastmcp.Context | None = None) -> list[dict]:
             """List reusable ingredient units and their categories."""
             await inject_tenant_uri(ctx)
             return await service.list_units()
+
+        @secure_tool(self._mcp, IMAGE_GENERATE_SCOPE)
+        async def generate_ingredient_image(
+                uuid: Annotated[
+                    str,
+                    Field(
+                        description="UUID (UUIDv7) of the ingredient requiring an image suggestion.",
+                        examples=["01951234-5678-7abc-def0-123456789abc"],
+                    ),
+                ],
+                ctx: fastmcp.Context | None = None,
+        ) -> dict:
+            """Generate one constrained ingredient image and create a reviewable suggestion."""
+            await inject_tenant_uri(ctx)
+            result = await service.generate_main_image_suggestion(
+                to_uuid6(StdUUID(uuid))
+            )
+            logger.info(
+                "✅ Ingredient image suggestion generated via MCP",
+                uuid=uuid,
+                run_uuid=result.run_uuid,
+                suggestion_uuid=result.suggestion_uuid,
+            )
+            return result.model_dump(mode="json")
 
         @secure_tool(self._mcp)
         async def convert_ingredient_unit(

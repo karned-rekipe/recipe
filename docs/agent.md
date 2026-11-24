@@ -46,6 +46,10 @@ Le serveur expose notamment :
 - `patch_recipe` : modifier partiellement une recette ;
 - `generate_recipe_image` : générer et rattacher l'image principale via le
   service `media`, sans exposer ce service au client MCP ;
+- `generate_ingredient_image` : générer une image d'ingrédient et créer une
+  suggestion `media_profile` validable via l'agent interne ;
+- `generate_equipment_image` : générer et rattacher individuellement l'image
+  principale d'un ustensile ou équipement ;
 - `ai_enrich_recipe` : enrichir et reclasser une fiche existante via le MCP
   interne de l'agent, sans exposer cet agent au client ;
 - `delete_recipe` : supprimer logiquement une recette ;
@@ -99,8 +103,9 @@ Après avoir sélectionné une recette sans image, appeler le tool MCP
 }
 ```
 
-Le service `recipe` charge le nom et les ingrédients, demande à `media` de
-générer et stocker l'image, puis persiste l'URL obtenue dans `main_image`. Le
+Le service `recipe` charge le nom et les ingrédients, construit le brief métier,
+demande à l'API générique de `media` de générer et stocker l'image, puis persiste
+l'URL obtenue dans `main_image`. Le
 client MCP ne doit donc pas appeler `media` directement. La réponse contient
 la recette mise à jour, les métadonnées de l'image et le fournisseur utilisé.
 
@@ -111,7 +116,6 @@ POST /v1/recipes/{uuid}/main-image
 Content-Type: application/json
 
 {
-  "prompt": null,
   "replace_existing": false
 }
 ```
@@ -121,7 +125,8 @@ directement, ni persister lui-même l'URL retournée.
 
 Par sécurité, le tool refuse de remplacer une image existante. Le paramètre
 `replace_existing=true` doit être fourni explicitement pour régénérer une
-image. Un `prompt` optionnel peut remplacer le prompt construit par `media`.
+image. Aucun prompt libre n'est accepté : `recipe` construit toujours le brief
+depuis la fiche faisant autorité et ses ingrédients hydratés.
 
 Une réservation atomique temporaire est portée par MongoDB pendant la
 génération. Elle empêche deux appels REST/MCP concurrents de déclencher deux
@@ -135,6 +140,66 @@ payant. La connexion interne à `media` se configure sans secret :
 RECIPE_MEDIA_API_BASE_URL=http://127.0.0.1:8030
 RECIPE_MEDIA_API_TIMEOUT_SECONDS=120
 ```
+
+## Générer l'image d'un équipement
+
+Le catalogue équipement suit la même frontière : `recipe` possède la fiche,
+compose un brief depuis son nom et sa description, appelle le contrat générique
+de `media`, puis attache l'URL à `main_image`.
+
+Le tool MCP est `generate_equipment_image`. La façade REST authentifiée est :
+
+```http
+POST /v1/equipment/{uuid}/main-image
+Content-Type: application/json
+
+{
+  "replace_existing": false
+}
+```
+
+La réservation atomique et le remplacement explicite suivent les mêmes règles
+que pour les recettes. `media` ne connaît ni recette, ni ingrédient, ni
+équipement : il reçoit uniquement un `brief`, un `bucket` et un
+`object_prefix` techniques. Le brief ne peut pas être remplacé par le client
+REST ou MCP.
+
+## Générer l'image d'un ingrédient
+
+Le catalogue ingrédient possède la même façade publique :
+
+```http
+POST /v1/ingredients/{uuid}/main-image
+Content-Type: application/json
+
+{}
+```
+
+Le tool MCP public équivalent est `generate_ingredient_image(uuid)`. `recipe`
+vérifie l'existence de l'ingrédient puis délègue au MCP interne de
+`ingredient-enrichment-agent`, configuré par :
+
+```dotenv
+INGREDIENT_ENRICHMENT_AGENT_MCP_URL=http://127.0.0.1:8034/mcp
+INGREDIENT_ENRICHMENT_AGENT_MCP_TIMEOUT_SECONDS=180
+```
+
+En développement local, l'adapter transmet aussi le tenant configuré par
+`REKIPE_TENANT_URI` dans `X-Tenant-URI`. Les deux API conservent ainsi leur
+propre résolution multitenant sans partager de coordonnées MongoDB.
+
+L'agent construit le brief, appelle le contrat générique de `media` et crée une
+suggestion limitée à `media_profile`. Contrairement aux recettes et
+équipements, l'image n'est pas appliquée automatiquement : elle reste soumise
+à validation humaine. Le navigateur et les clients IA ne contactent jamais
+directement l'agent d'enrichissement pour cette opération.
+
+Les lectures REST et MCP d'un ingrédient exposent aussi
+`suggested_media_profile` lorsque la dernière suggestion image n'est ni
+appliquée ni rejetée. Ce profil sert uniquement d'aperçu durable : il reste
+séparé de `media_profile`, survit à un rechargement du client et disparaît après
+rejet. Après application, l'image est portée par `media_profile` et l'aperçu
+n'est plus renvoyé.
 
 ## Enrichir une recette via l'IA
 
@@ -205,5 +270,6 @@ print([tool.name for tool in asyncio.run(mcp.list_tools())])
 
 La liste doit contenir au minimum `list_recipes`, `get_recipe`,
 `create_recipe`, `patch_recipe`, `generate_recipe_image`, `ai_enrich_recipe`,
+`generate_ingredient_image`, `generate_equipment_image`,
 `normalize_origin_country`
 et `delete_recipe`.

@@ -18,6 +18,10 @@ from application.services.ingredient_group_service import IngredientGroupService
 from application.services.ingredient_rayon_service import IngredientRayonService
 from application.services.ingredient_service import IngredientService
 from application.services.tag_service import TagService
+from domain.models.generated_image import GeneratedImage
+from domain.models.ingredient_image_generation import IngredientImageGeneration
+from domain.ports.output.ingredient_image_generation_agent import IngredientImageGenerationAgent
+from domain.ports.output.image_generator import ImageGenerator
 
 
 class FakeRecipeService:
@@ -46,7 +50,42 @@ def mcp_app() -> fastmcp.FastMCP:
 
 
 @pytest.fixture
-async def client(logger, mcp_app: fastmcp.FastMCP):
+def image_generator():
+    generator = AsyncMock(spec=ImageGenerator)
+    generator.generate.return_value = GeneratedImage.model_validate({
+        "image": {
+            "bucket": "equipment",
+            "key": "equipment/four/main/image.png",
+            "url": "/api/media/v1/buckets/equipment/objects/equipment/four/main/image.png",
+            "content_type": "image/png",
+            "size_bytes": 42,
+        },
+        "provider": "test",
+    })
+    return generator
+
+
+@pytest.fixture
+def ingredient_image_agent():
+    agent = AsyncMock(spec=IngredientImageGenerationAgent)
+
+    async def generate(*, ingredient_uuid: str):
+        return IngredientImageGeneration(
+            run_uuid="run-1",
+            ingredient_uuid=ingredient_uuid,
+            suggestion_uuid="suggestion-1",
+            status="success",
+            completeness_score=25,
+            missing_fields=["media_profile"],
+            proposed_fields=["media_profile"],
+        )
+
+    agent.generate.side_effect = generate
+    return agent
+
+
+@pytest.fixture
+async def client(logger, mcp_app: fastmcp.FastMCP, image_generator, ingredient_image_agent):
     recipe_service = FakeRecipeService()
     with (
         patch("adapters.input.fastmcp.tools.equipment_tools.inject_tenant_uri", new=AsyncMock()),
@@ -55,14 +94,22 @@ async def client(logger, mcp_app: fastmcp.FastMCP):
         patch("adapters.input.fastmcp.tools.ingredient_tools.inject_tenant_uri", new=AsyncMock()),
     ):
         EquipmentMCP(
-            EquipmentService(InMemoryEquipmentRepository(), logger),
+            EquipmentService(
+                InMemoryEquipmentRepository(),
+                logger,
+                image_generator=image_generator,
+            ),
             logger,
             mcp_app,
             recipe_service,
         )
         TagMCP(TagService(InMemoryTagRepository(), logger), logger, mcp_app, recipe_service)
         ingredient_repository = InMemoryIngredientRepository()
-        ingredient_service = IngredientService(ingredient_repository, logger)
+        ingredient_service = IngredientService(
+            ingredient_repository,
+            logger,
+            image_generation_agent=ingredient_image_agent,
+        )
         suggestion_service = IngredientEnrichmentSuggestionService(
             InMemoryIngredientEnrichmentSuggestionRepository(),
             ingredient_repository,
@@ -121,6 +168,23 @@ async def test_equipment_mcp_crud_and_duplicates(client) -> None:
     assert updated["name"] == "Four vapeur"
     assert recipes == []
     assert merge_result["deleted_count"] == 1
+
+
+async def test_equipment_mcp_generates_and_attaches_image(client, image_generator) -> None:
+    created = _data(await client.call_tool("create_equipment", {"name": "Fouet"}))
+
+    result = _data(
+        await client.call_tool(
+            "generate_equipment_image",
+            {"uuid": created["uuid"]},
+        )
+    )
+
+    assert result["equipment"]["main_image"] == result["image"]["url"]
+    call = image_generator.generate.await_args.kwargs
+    assert "Fouet" in call["brief"]
+    assert call["bucket"] == "equipment"
+    assert call["object_prefix"] == f"equipment/{created['uuid']}/main"
 
 
 async def test_tag_mcp_crud(client) -> None:
@@ -231,3 +295,18 @@ async def test_ingredient_mcp_v5_tools(client) -> None:
     assert suggestions[0]["uuid"] == suggestion["uuid"]
     assert applied["status"] == "applied"
     assert rejected["status"] == "rejected"
+
+
+async def test_ingredient_mcp_generates_reviewable_image_suggestion(client) -> None:
+    created = _data(await client.call_tool("create_ingredient", {"name": "Carotte"}))
+
+    result = _data(
+        await client.call_tool(
+            "generate_ingredient_image",
+            {"uuid": created["uuid"]},
+        )
+    )
+
+    assert result["ingredient_uuid"] == created["uuid"]
+    assert result["suggestion_uuid"] == "suggestion-1"
+    assert result["proposed_fields"] == ["media_profile"]

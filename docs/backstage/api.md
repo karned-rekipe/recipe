@@ -3,7 +3,8 @@
 La documentation OpenAPI active est disponible sous `/api/recipe/docs` en
 préproduction. Le contrat REST fournit les CRUD des recettes et catalogues, la
 pagination, les filtres de saison, d'éligibilité et de présence d'image, ainsi
-que la façade de génération d'image principale.
+que les façades de génération d'image pour les recettes, les ingrédients et
+les équipements.
 La façade `POST /v1/recipes/{uuid}/ai-enrich` déclenche l'agent interne puis
 renvoie la fiche hydratée, sans exposer directement le MCP de l'agent.
 
@@ -23,3 +24,7 @@ faire échouer l'enrichissement de la recette.
 `ai_enrich_recipe` requiert les scopes `recipes:write` et
 `recipes:image:generate`. Il sélectionne les tags uniquement dans le catalogue
 Recipe existant et conserve les associations déjà présentes.
+
+Les tools `generate_recipe_image`, `generate_ingredient_image` et
+`generate_equipment_image` exigent `recipes:image:generate`. Ils partent
+uniquement de l'UUID de l'entité et n'acceptent aucun brief créatif libre.

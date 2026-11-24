@@ -77,7 +77,7 @@ son secret dans Vault.
 |---|---|
 | `recipes:read` | connexion MCP, listes, recherches, détails, resources et prompts |
 | `recipes:write` | création, modification, duplication, fusion et suggestions |
-| `recipes:image:generate` | génération ou remplacement de l'image principale |
+| `recipes:image:generate` | génération d'une image de recette, d'ingrédient ou d'équipement ; application directe seulement pour recette/équipement |
 | `recipes:delete` | soft-delete des recettes et ressources catalogue |
 | `recipes:admin` | purge irréversible des éléments supprimés |
 
@@ -146,6 +146,8 @@ Un test de bout en bout doit ensuite couvrir au minimum :
 - jeton valide avec `recipes:read` : `list_recipes` accepté ;
 - même jeton : `generate_recipe_image` refusé ;
 - ajout de `recipes:image:generate` : génération acceptée ;
+- le même scope protège `generate_ingredient_image` et
+  `generate_equipment_image`, sans donner accès au MCP générique de `media` ;
 - mauvais issuer, mauvaise audience, jeton expiré ou rôle absent : `401` ;
 - scope d'action absent : tool refusé ;
 - révocation du rôle ou désactivation du client : nouvel accès impossible.

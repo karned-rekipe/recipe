@@ -3,10 +3,12 @@ from typing import Any
 from application.use_cases import FindIngredientByNameUseCase
 from arclith import BaseService, Logger
 from domain.models.catalog_normalization import normalize_catalog_name
-from domain.models.ingredient import Ingredient
+from domain.models.ingredient import Ingredient, MediaProfile
+from domain.models.ingredient_image_generation import IngredientImageGeneration
 from domain.models.ingredient_group import IngredientGroup
 from domain.models.ingredient_rayon import IngredientRayon
 from domain.ports.output.ingredient_group_repository import IngredientGroupRepository
+from domain.ports.output.ingredient_image_generation_agent import IngredientImageGenerationAgent
 from domain.ports.output.ingredient_repository import IngredientRepository
 from domain.ports.output.ingredient_rayon_repository import IngredientRayonRepository
 from uuid6 import UUID
@@ -22,6 +24,10 @@ class IngredientDuplicateMergeError(ValueError):
 
 class IngredientUnitConversionError(ValueError):
     """Raised when an ingredient unit conversion cannot be resolved."""
+
+
+class IngredientImageGenerationUnavailableError(RuntimeError):
+    """Raised when the internal ingredient image agent is not configured."""
 
 
 GLOBAL_UNITS: tuple[dict[str, str], ...] = (
@@ -64,12 +70,14 @@ class IngredientService(BaseService[Ingredient]):
         retention_days: float | None = None,
         group_repository: IngredientGroupRepository | None = None,
         rayon_repository: IngredientRayonRepository | None = None,
+        image_generation_agent: IngredientImageGenerationAgent | None = None,
     ) -> None:
         super().__init__(repository, logger, retention_days)
         self._ingredient_repo = repository
         self._find_by_name_uc = FindIngredientByNameUseCase(repository, logger)
         self._group_repo = group_repository
         self._rayon_repo = rayon_repository
+        self._image_generation_agent = image_generation_agent
 
     @property
     def repository(self) -> IngredientRepository:
@@ -86,6 +94,21 @@ class IngredientService(BaseService[Ingredient]):
     async def find_by_name(self, name: str) -> list[Ingredient]:
         return await self._find_by_name_uc.execute(name)
 
+    async def generate_main_image_suggestion(self, uuid: UUID) -> IngredientImageGeneration:
+        agent = self._image_generation_agent
+        if agent is None:
+            raise IngredientImageGenerationUnavailableError(
+                "Ingredient image generation is not configured"
+            )
+        ingredient = await self.read(uuid)
+        if ingredient is None or ingredient.is_deleted:
+            raise KeyError(f"Ingredient with uuid {uuid} not found")
+
+        result = await agent.generate(ingredient_uuid=str(uuid))
+        if result.ingredient_uuid != str(uuid):
+            raise RuntimeError("Ingredient image agent returned a result for another ingredient")
+        return result
+
     async def find_page_filtered(
         self,
         name: str | None = None,
@@ -97,15 +120,35 @@ class IngredientService(BaseService[Ingredient]):
         """Return a page of ingredients (optionally filtered by name) and total count."""
         return await self._ingredient_repo.find_page_filtered(name, group_uuid, rayon_uuid, offset, limit)
 
-    async def hydrate_ingredient(self, ingredient: Ingredient) -> dict[str, Any]:
+    async def hydrate_ingredient(
+        self,
+        ingredient: Ingredient,
+        suggested_media_profile: MediaProfile | None = None,
+    ) -> dict[str, Any]:
         data = ingredient.model_dump(mode="json", exclude_computed_fields=True)
         data["is_deleted"] = ingredient.is_deleted
         data["group"] = self._catalog_payload(await self._read_group(ingredient.group_uuid))
         data["rayon"] = self._catalog_payload(await self._read_rayon(ingredient.rayon_uuid))
+        data["suggested_media_profile"] = (
+            suggested_media_profile.model_dump(mode="json")
+            if suggested_media_profile is not None
+            else None
+        )
         return data
 
-    async def hydrate_ingredients(self, ingredients: list[Ingredient]) -> list[dict[str, Any]]:
-        return [await self.hydrate_ingredient(ingredient) for ingredient in ingredients]
+    async def hydrate_ingredients(
+        self,
+        ingredients: list[Ingredient],
+        suggested_media_profiles: dict[str, MediaProfile] | None = None,
+    ) -> list[dict[str, Any]]:
+        media_profiles = suggested_media_profiles or {}
+        return [
+            await self.hydrate_ingredient(
+                ingredient,
+                media_profiles.get(str(ingredient.uuid)),
+            )
+            for ingredient in ingredients
+        ]
 
     async def is_group_used(self, group_uuid: UUID) -> bool:
         return await self._ingredient_repo.exists_by_group_uuid(group_uuid)

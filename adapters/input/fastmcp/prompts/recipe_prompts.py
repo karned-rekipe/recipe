@@ -72,6 +72,8 @@ class RecipePrompts:
                 "has_main_image=false to find recipes that need an image\n"
                 "- duplicate_recipe(uuid) — clone with a new UUID\n"
                 "- generate_recipe_image(uuid) — generate and attach the main image\n"
+                "- generate_ingredient_image(uuid) — generate a reviewable ingredient image suggestion\n"
+                "- generate_equipment_image(uuid) — generate and attach an equipment image\n"
                 "- ai_enrich_recipe(uuid, generate_image) — enrich and reorganize an existing recipe via the internal AI agent\n"
                 "- purge_recipes() — permanently remove expired soft-deleted entries\n\n"
                 "**Prompts** (LLM guidance):\n"

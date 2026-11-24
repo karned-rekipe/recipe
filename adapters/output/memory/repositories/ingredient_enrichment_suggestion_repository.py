@@ -21,3 +21,16 @@ class InMemoryIngredientEnrichmentSuggestionRepository(
             for suggestion in await self.find_by_ingredient_uuid(ingredient_uuid)
             if suggestion.status == "pending"
         ]
+
+    async def find_active_by_ingredient_uuids(
+        self,
+        ingredient_uuids: list[UUID],
+    ) -> list[IngredientEnrichmentSuggestion]:
+        target_uuids = {str(ingredient_uuid) for ingredient_uuid in ingredient_uuids}
+        return [
+            suggestion
+            for suggestion in self._store.values()
+            if str(suggestion.ingredient_uuid) in target_uuids
+            and suggestion.status in {"pending", "partially_applied"}
+            and not suggestion.is_deleted
+        ]

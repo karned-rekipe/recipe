@@ -9,12 +9,21 @@ from adapters.input.schemas.duplicate_schema import DuplicateGroupSchema, Duplic
 from adapters.input.schemas.equipment_schema import (
     EquipmentCreatedSchema,
     EquipmentCreateSchema,
+    EquipmentImageGenerationRequestSchema,
+    EquipmentImageGenerationResponseSchema,
     EquipmentPatchSchema,
     EquipmentSchema,
     EquipmentUpdateSchema,
 )
 from adapters.input.schemas.recipe_schema import RecipeSchema
-from application.services.equipment_service import EquipmentDuplicateMergeError, EquipmentService
+from application.services.equipment_service import (
+    EquipmentDuplicateMergeError,
+    EquipmentImageAlreadyExistsError,
+    EquipmentImageGenerationConflictError,
+    EquipmentImageGenerationInProgressError,
+    EquipmentImageGenerationUnavailableError,
+    EquipmentService,
+)
 from application.services.recipe_service import RecipeMergeConflict, RecipeService
 from arclith.adapters.input.fastapi.dependencies import get_duration_ms
 from arclith.adapters.input.schemas.response_wrapper import (
@@ -80,6 +89,21 @@ class EquipmentRouter:
             response_model=ApiResponse[EquipmentSchema],
             status_code=200,
             responses={404: {"description": "Equipment not found"}},
+        )
+        self.router.add_api_route(
+            methods=["POST"],
+            path="/{uuid}/main-image",
+            endpoint=self.generate_equipment_image,
+            summary="Generate and attach the equipment main image",
+            response_model=ApiResponse[EquipmentImageGenerationResponseSchema],
+            status_code=200,
+            responses={
+                404: {"description": "Equipment not found"},
+                409: {"description": "Equipment already has a main image"},
+                502: {"description": "Media image generation failed"},
+                503: {"description": "Image generation is not configured"},
+            },
+            dependencies=[Depends(require_auth)],
         )
         self.router.add_api_route(
             methods=["PUT"],
@@ -187,6 +211,45 @@ class EquipmentRouter:
             metadata=ResponseMetadata(duration_ms=int(duration_ms)),
         )
 
+    async def generate_equipment_image(
+        self,
+        uuid: StdUUID,
+        payload: EquipmentImageGenerationRequestSchema,
+        duration_ms: Annotated[float, Depends(get_duration_ms)],
+    ) -> ApiResponse[EquipmentImageGenerationResponseSchema]:
+        """Generate, store, and attach an equipment main image through media."""
+        try:
+            equipment, generated = await self._service.generate_main_image(
+                self._to_uuid6(uuid),
+                replace_existing=payload.replace_existing,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Equipment not found") from exc
+        except (
+            EquipmentImageAlreadyExistsError,
+            EquipmentImageGenerationConflictError,
+            EquipmentImageGenerationInProgressError,
+        ) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except EquipmentImageGenerationUnavailableError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+        self._logger.info(
+            "✅ Equipment image generated via HTTP",
+            uuid=str(uuid),
+            provider=generated.provider,
+            image_url=generated.image.url,
+        )
+        return success_response(
+            EquipmentImageGenerationResponseSchema(
+                equipment=EquipmentSchema.model_validate(equipment, from_attributes=True),
+                **generated.model_dump(),
+            ),
+            metadata=ResponseMetadata(duration_ms=int(duration_ms)),
+        )
+
     async def update_equipment(
         self,
         uuid: StdUUID,
@@ -205,6 +268,7 @@ class EquipmentRouter:
             uuid=self._to_uuid6(uuid),
             name=payload.name,
             description=payload.description,
+            main_image=existing.main_image,
         ))
         response.headers["Content-Location"] = f"/v1/equipment/{uuid}"
         response.headers["ETag"] = f'"{updated.version}"'
@@ -227,6 +291,7 @@ class EquipmentRouter:
             uuid=existing.uuid,
             name=payload.name if payload.name is not None else existing.name,
             description=payload.description if payload.description is not None else existing.description,
+            main_image=existing.main_image,
         ))
         response.headers["Content-Location"] = f"/v1/equipment/{uuid}"
         response.headers["ETag"] = f'"{updated.version}"'
