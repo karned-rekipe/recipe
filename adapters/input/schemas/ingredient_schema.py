@@ -15,6 +15,7 @@ from domain.models.ingredient import (
     SustainabilityProfile,
     UnitProfile,
 )
+from domain.models.ingredient_ai_enrichment import IngredientAIEnrichment
 from domain.models.ingredient_image_generation import IngredientImageGeneration
 
 
@@ -135,6 +136,14 @@ class IngredientUnitConversionResponseSchema(BaseModel):
 
 class IngredientImageGenerationResponseSchema(IngredientImageGeneration):
     """Reviewable image suggestion created by the internal ingredient agent."""
+
+
+class IngredientAIEnrichmentResponseSchema(IngredientAIEnrichment):
+    """Ingredient completion result returned by the internal ingredient agent."""
+
+
+class IngredientAIEnrichmentRequestSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
 
 class IngredientImageGenerationRequestSchema(BaseModel):

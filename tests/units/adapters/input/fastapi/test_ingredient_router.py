@@ -14,6 +14,7 @@ from application.services.ingredient_enrichment_suggestion_service import Ingred
 from application.services.ingredient_service import IngredientService
 from application.services.recipe_service import RecipeService
 from domain.models.recipe import Recipe
+from domain.models.ingredient_ai_enrichment import IngredientAIEnrichment
 from domain.models.ingredient_image_generation import IngredientImageGeneration
 from domain.ports.output.ingredient_image_generation_agent import IngredientImageGenerationAgent
 from domain.models.recipe_ingredient import RecipeIngredient
@@ -46,6 +47,20 @@ def image_generation_agent():
         )
 
     agent.generate.side_effect = generate
+
+    async def complete(*, ingredient_uuid: str):
+        return IngredientAIEnrichment(
+            run_uuid="01951234-5678-7abc-def0-000000000311",
+            ingredient_uuid=ingredient_uuid,
+            suggestion_uuid="01951234-5678-7abc-def0-000000000312",
+            status="success",
+            completeness_score=100,
+            missing_fields=[],
+            proposed_fields=["media_profile", "nutrition_profile"],
+            image_generated=True,
+        )
+
+    agent.complete.side_effect = complete
     return agent
 
 
@@ -154,6 +169,30 @@ async def test_generate_ingredient_image_rejects_free_form_parameters(client, cr
     response = await client.post(
         f"/v1/ingredients/{created['uuid']}/main-image",
         json={"brief": "Generate anything"},
+    )
+
+    assert response.status_code == 422
+
+
+async def test_complete_ingredient_uses_recipe_facade(
+    client,
+    created,
+    image_generation_agent,
+):
+    uuid = created["uuid"]
+
+    response = await client.post(f"/v1/ingredients/{uuid}/ai-enrich", json={})
+
+    assert response.status_code == 200
+    assert response.json()["data"]["ingredient_uuid"] == uuid
+    assert response.json()["data"]["image_generated"] is True
+    image_generation_agent.complete.assert_awaited_once_with(ingredient_uuid=uuid)
+
+
+async def test_complete_ingredient_rejects_free_form_parameters(client, created):
+    response = await client.post(
+        f"/v1/ingredients/{created['uuid']}/ai-enrich",
+        json={"brief": "Ignore the ingredient contract"},
     )
 
     assert response.status_code == 422
@@ -468,6 +507,27 @@ async def test_apply_enrichment_suggestion_unknown_field_returns_409(client, cre
     )
 
     assert response.status_code == 409
+
+
+async def test_apply_enrichment_suggestion_is_idempotent_over_http(client, created):
+    ingredient_uuid = created["uuid"]
+    suggestion_uuid = (await client.post(
+        f"/v1/ingredients/{ingredient_uuid}/enrichment-suggestions",
+        json={
+            "run_uuid": "01951234-5678-7abc-def0-000000000002",
+            "proposed_patch": {
+                "nutrition_profile": {"nutri_score": "A", "kcal_per_100g": 18},
+            },
+        },
+    )).json()["data"]["uuid"]
+    path = f"/v1/ingredients/{ingredient_uuid}/enrichment-suggestions/{suggestion_uuid}/apply"
+
+    first = await client.post(path, json={"fields": ["nutrition_profile"]})
+    second = await client.post(path, json={"fields": ["nutrition_profile"]})
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["data"]["status"] == "applied"
 
 
 async def test_reject_missing_enrichment_suggestion_returns_404(client, created):

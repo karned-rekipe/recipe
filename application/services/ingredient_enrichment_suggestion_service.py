@@ -81,6 +81,16 @@ class IngredientEnrichmentSuggestionService(BaseService[IngredientEnrichmentSugg
     ) -> IngredientEnrichmentSuggestion:
         ingredient = await self._read_ingredient(ingredient_uuid)
         suggestion = await self._read_suggestion(ingredient_uuid, suggestion_uuid)
+        if suggestion.status == "applied":
+            requested_fields = self._select_requested_fields(suggestion, fields)
+            if requested_fields <= set(suggestion.applied_fields):
+                self._logger.info(
+                    "Ingredient enrichment suggestion already applied",
+                    ingredient_uuid=str(ingredient_uuid),
+                    suggestion_uuid=str(suggestion_uuid),
+                    requested_fields=sorted(requested_fields),
+                )
+                return suggestion
         if suggestion.status not in {"pending", "partially_applied"}:
             raise IngredientEnrichmentSuggestionError(f"Suggestion status does not allow apply: {suggestion.status}")
 

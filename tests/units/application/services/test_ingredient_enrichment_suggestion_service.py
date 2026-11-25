@@ -1,3 +1,5 @@
+from unittest.mock import AsyncMock
+
 from adapters.output.memory.repositories.ingredient_enrichment_suggestion_repository import (
     InMemoryIngredientEnrichmentSuggestionRepository,
 )
@@ -198,6 +200,28 @@ async def test_apply_suggestion_updates_unvalidated_profile(logger):
     assert applied.applied_fields == ["media_profile"]
     assert updated is not None
     assert updated.media_profile.main_image_uri == "media://tomate.png"
+
+
+async def test_apply_suggestion_is_idempotent_once_already_applied(logger):
+    ingredient_repo = InMemoryIngredientRepository()
+    ingredient = await ingredient_repo.create(Ingredient(name="Tomate"))
+    suggestion_repo = InMemoryIngredientEnrichmentSuggestionRepository()
+    service = IngredientEnrichmentSuggestionService(suggestion_repo, ingredient_repo, logger)
+    ingredient_repo.update = AsyncMock(wraps=ingredient_repo.update)
+    suggestion = await service.create(
+        IngredientEnrichmentSuggestion(
+            ingredient_uuid=ingredient.uuid,
+            run_uuid="01951234-5678-7abc-def0-000000000002",
+            proposed_patch={"media_profile": {"main_image_uri": "media://tomate.png", "image_status": "uploaded"}},
+        )
+    )
+
+    first = await service.apply(ingredient.uuid, suggestion.uuid)
+    second = await service.apply(ingredient.uuid, suggestion.uuid)
+
+    assert first.status == "applied"
+    assert second == first
+    assert ingredient_repo.update.await_count == 1
 
 
 async def test_apply_selected_suggestion_field_keeps_partial_status(logger):

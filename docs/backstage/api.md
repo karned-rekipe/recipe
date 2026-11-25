@@ -5,8 +5,10 @@ préproduction. Le contrat REST fournit les CRUD des recettes et catalogues, la
 pagination, les filtres de saison, d'éligibilité et de présence d'image, ainsi
 que les façades de génération d'image pour les recettes, les ingrédients et
 les équipements.
-La façade `POST /v1/recipes/{uuid}/ai-enrich` déclenche l'agent interne puis
-renvoie la fiche hydratée, sans exposer directement le MCP de l'agent.
+Les façades `POST /v1/recipes/{uuid}/ai-enrich` et
+`POST /v1/ingredients/{uuid}/ai-enrich` déclenchent leur agent interne sans
+exposer directement son MCP au navigateur. La complétion d'un ingrédient
+applique les données et l'image manquantes par les contrats de `recipe`.
 
 Le MCP public est exposé sous `/api/recipe-mcp/mcp`. Il exige OAuth 2.1, PKCE,
 le rôle `rekipe:mcp-access` et des scopes adaptés à l'opération. Les appels sans
@@ -28,3 +30,5 @@ Recipe existant et conserve les associations déjà présentes.
 Les tools `generate_recipe_image`, `generate_ingredient_image` et
 `generate_equipment_image` exigent `recipes:image:generate`. Ils partent
 uniquement de l'UUID de l'entité et n'acceptent aucun brief créatif libre.
+`complete_ingredient` exige les scopes d'écriture et de génération d'image ;
+il ne régénère pas une image déjà présente.
