@@ -10,10 +10,10 @@ from adapters.output.memory.repositories.equipment_repository import InMemoryEqu
 from adapters.output.memory.repositories.ingredient_repository import InMemoryIngredientRepository
 from application.services.recipe_service import RecipeService
 from domain.models.equipment import Equipment
-from domain.models.generated_recipe_image import GeneratedRecipeImage
+from domain.models.generated_image import GeneratedImage
 from domain.models.recipe_ai_enrichment import RecipeAIEnrichment
 from domain.models.ingredient import Ingredient
-from domain.ports.output.recipe_image_generator import RecipeImageGenerator
+from domain.ports.output.image_generator import ImageGenerator
 from domain.ports.output.recipe_ai_enrichment_agent import RecipeAIEnrichmentAgent
 from infrastructure.purge_registry import PurgeRegistry
 from uuid6 import UUID
@@ -78,8 +78,8 @@ def equipment_repo():
 
 @pytest.fixture
 def image_generator():
-    generator = AsyncMock(spec=RecipeImageGenerator)
-    generator.generate.return_value = GeneratedRecipeImage.model_validate({
+    generator = AsyncMock(spec=ImageGenerator)
+    generator.generate.return_value = GeneratedImage.model_validate({
         "image": {
             "bucket": "recipes",
             "key": "recipes/generated.png",
@@ -153,19 +153,18 @@ async def test_generate_recipe_image_uses_recipe_facade(client, image_generator)
 
     response = await client.post(
         f"/v1/recipes/{uuid}/main-image",
-        json={"prompt": "Photo culinaire lumineuse"},
+        json={},
     )
 
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["provider"] == "test"
     assert data["recipe"]["main_image"] == data["image"]["url"]
-    image_generator.generate.assert_awaited_once_with(
-        recipe_uuid=uuid,
-        recipe_name="Farine",
-        ingredients=["Farine de ble"],
-        prompt="Photo culinaire lumineuse",
-    )
+    call = image_generator.generate.await_args.kwargs
+    assert "Farine" in call["brief"]
+    assert "Farine de ble" in call["brief"]
+    assert call["bucket"] == "recipes"
+    assert call["object_prefix"] == f"recipes/{uuid}/main"
 
 
 async def test_generate_recipe_image_refuses_implicit_replacement(client):
@@ -175,6 +174,18 @@ async def test_generate_recipe_image_refuses_implicit_replacement(client):
     response = await client.post(f"/v1/recipes/{uuid}/main-image", json={})
 
     assert response.status_code == 409
+
+
+async def test_generate_recipe_image_rejects_free_form_prompt(client):
+    created = await client.post("/v1/recipes/", json=_complete_payload(main_image=None))
+    uuid = created.json()["data"]["uuid"]
+
+    response = await client.post(
+        f"/v1/recipes/{uuid}/main-image",
+        json={"prompt": "Generate anything"},
+    )
+
+    assert response.status_code == 422
 
 
 async def test_generate_recipe_image_maps_media_failure(client, image_generator):

@@ -6,7 +6,7 @@ from uuid import uuid4
 from application.use_cases import FindByNameUseCase
 from arclith import BaseService, Logger
 from domain.models.equipment import Equipment
-from domain.models.generated_recipe_image import GeneratedRecipeImage
+from domain.models.generated_image import GeneratedImage
 from domain.models.ingredient import Ingredient
 from domain.models.ingredient_group import IngredientGroup
 from domain.models.ingredient_rayon import IngredientRayon
@@ -22,7 +22,7 @@ from domain.ports.output.equipment_repository import EquipmentRepository
 from domain.ports.output.ingredient_group_repository import IngredientGroupRepository
 from domain.ports.output.ingredient_repository import IngredientRepository
 from domain.ports.output.ingredient_rayon_repository import IngredientRayonRepository
-from domain.ports.output.recipe_image_generator import RecipeImageGenerator
+from domain.ports.output.image_generator import ImageGenerator
 from domain.ports.output.recipe_ai_enrichment_agent import RecipeAIEnrichmentAgent
 from domain.ports.output.recipe_repository import RecipeRepository
 from domain.ports.output.tag_repository import TagRepository
@@ -80,7 +80,7 @@ class RecipeService(BaseService[Recipe]):
         tag_repository: TagRepository | None = None,
         group_repository: IngredientGroupRepository | None = None,
         rayon_repository: IngredientRayonRepository | None = None,
-        image_generator: RecipeImageGenerator | None = None,
+        image_generator: ImageGenerator | None = None,
         ai_enrichment_agent: RecipeAIEnrichmentAgent | None = None,
     ) -> None:
         super().__init__(repository, logger, retention_days)
@@ -122,9 +122,8 @@ class RecipeService(BaseService[Recipe]):
         self,
         uuid: UUID,
         *,
-        prompt: str | None = None,
         replace_existing: bool = False,
-    ) -> tuple[Recipe, GeneratedRecipeImage]:
+    ) -> tuple[Recipe, GeneratedImage]:
         image_generator = self._image_generator
         if image_generator is None:
             raise RecipeImageGenerationUnavailableError("Recipe image generation is not configured")
@@ -136,11 +135,11 @@ class RecipeService(BaseService[Recipe]):
             replace_existing=replace_existing,
         )
         try:
+            ingredient_names = await self._image_ingredient_names(recipe)
             generated = await image_generator.generate(
-                recipe_uuid=str(recipe.uuid),
-                recipe_name=recipe.name,
-                ingredients=await self._image_ingredient_names(recipe),
-                prompt=prompt,
+                brief=self._build_image_brief(recipe.name, ingredient_names),
+                bucket="recipes",
+                object_prefix=f"recipes/{recipe.uuid}/main",
             )
             updated = await self._complete_main_image_generation(
                 uuid,
@@ -214,6 +213,24 @@ class RecipeService(BaseService[Recipe]):
             for ingredient in hydrated["ingredients"]
             if isinstance(ingredient.get("name"), str) and ingredient["name"].strip()
         ]
+
+    @staticmethod
+    def _build_image_brief(
+        recipe_name: str,
+        ingredient_names: list[str],
+    ) -> str:
+        ingredient_context = ", ".join(ingredient_names)
+        ingredients = (
+            f" Ingrédients de référence : {ingredient_context}."
+            if ingredient_context
+            else ""
+        )
+        return (
+            "Photo culinaire réaliste en lumière naturelle, cadrage éditorial, "
+            f"montrant fidèlement la recette « {recipe_name.strip()} »."
+            f"{ingredients} Ne pas ajouter d'élément suggéré uniquement par le nom "
+            "du plat. Aucun texte dans l'image."
+        )
 
     async def _complete_main_image_generation(
         self,

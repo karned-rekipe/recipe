@@ -13,3 +13,10 @@ class IngredientEnrichmentSuggestionRepository(Repository[IngredientEnrichmentSu
     @abstractmethod
     async def find_pending_by_ingredient_uuid(self, ingredient_uuid: UUID) -> list[IngredientEnrichmentSuggestion]:
         pass
+
+    @abstractmethod
+    async def find_active_by_ingredient_uuids(
+        self,
+        ingredient_uuids: list[UUID],
+    ) -> list[IngredientEnrichmentSuggestion]:
+        pass

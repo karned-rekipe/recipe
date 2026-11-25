@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import AsyncMock
 from fastapi import FastAPI
 from httpx import AsyncClient, ASGITransport
 
@@ -13,6 +14,8 @@ from application.services.ingredient_enrichment_suggestion_service import Ingred
 from application.services.ingredient_service import IngredientService
 from application.services.recipe_service import RecipeService
 from domain.models.recipe import Recipe
+from domain.models.ingredient_image_generation import IngredientImageGeneration
+from domain.ports.output.ingredient_image_generation_agent import IngredientImageGenerationAgent
 from domain.models.recipe_ingredient import RecipeIngredient
 from infrastructure.purge_registry import PurgeRegistry
 from uuid6 import UUID
@@ -28,8 +31,31 @@ def ingredient_repo():
 
 
 @pytest.fixture
-def service(ingredient_repo, logger):
-    return IngredientService(ingredient_repo, logger)
+def image_generation_agent():
+    agent = AsyncMock(spec=IngredientImageGenerationAgent)
+
+    async def generate(*, ingredient_uuid: str):
+        return IngredientImageGeneration(
+            run_uuid="01951234-5678-7abc-def0-000000000301",
+            ingredient_uuid=ingredient_uuid,
+            suggestion_uuid="01951234-5678-7abc-def0-000000000302",
+            status="success",
+            completeness_score=25,
+            missing_fields=["media_profile"],
+            proposed_fields=["media_profile"],
+        )
+
+    agent.generate.side_effect = generate
+    return agent
+
+
+@pytest.fixture
+def service(ingredient_repo, logger, image_generation_agent):
+    return IngredientService(
+        ingredient_repo,
+        logger,
+        image_generation_agent=image_generation_agent,
+    )
 
 
 @pytest.fixture
@@ -109,6 +135,30 @@ async def test_get_not_found(client):
     assert response.status_code == 404
 
 
+async def test_generate_ingredient_image_uses_recipe_facade(
+    client,
+    created,
+    image_generation_agent,
+):
+    uuid = created["uuid"]
+
+    response = await client.post(f"/v1/ingredients/{uuid}/main-image", json={})
+
+    assert response.status_code == 201
+    assert response.json()["data"]["ingredient_uuid"] == uuid
+    assert response.json()["data"]["proposed_fields"] == ["media_profile"]
+    image_generation_agent.generate.assert_awaited_once_with(ingredient_uuid=uuid)
+
+
+async def test_generate_ingredient_image_rejects_free_form_parameters(client, created):
+    response = await client.post(
+        f"/v1/ingredients/{created['uuid']}/main-image",
+        json={"brief": "Generate anything"},
+    )
+
+    assert response.status_code == 422
+
+
 # --- PUT /{uuid} ---
 
 async def test_update_returns_204(client, created):
@@ -169,6 +219,45 @@ async def test_list_contains_created(client, created):
     assert data["status"] == "success"
     names = [item["name"] for item in data["data"]]
     assert "Tomate" in names
+
+
+async def test_pending_image_suggestion_survives_detail_and_list_reload(client, created):
+    ingredient_uuid = created["uuid"]
+    image_uri = "/api/media/v1/buckets/ingredients/objects/tomate.png"
+    suggestion_response = await client.post(
+        f"/v1/ingredients/{ingredient_uuid}/enrichment-suggestions",
+        json={
+            "run_uuid": "01951234-5678-7abc-def0-000000000451",
+            "proposed_patch": {
+                "media_profile": {
+                    "main_image_uri": image_uri,
+                    "image_status": "generated",
+                    "source": "ai",
+                    "validated": False,
+                },
+            },
+            "field_confidences": {"media_profile": 0.8},
+            "field_sources": {"media_profile": "ai"},
+        },
+    )
+    suggestion_uuid = suggestion_response.json()["data"]["uuid"]
+
+    detail = (await client.get(f"/v1/ingredients/{ingredient_uuid}")).json()["data"]
+    listed = (await client.get("/v1/ingredients/")).json()["data"][0]
+
+    assert detail["media_profile"]["main_image_uri"] is None
+    assert detail["suggested_media_profile"]["main_image_uri"] == image_uri
+    assert detail["suggested_media_profile"]["validated"] is False
+    assert listed["suggested_media_profile"]["main_image_uri"] == image_uri
+
+    reject_response = await client.post(
+        f"/v1/ingredients/{ingredient_uuid}/enrichment-suggestions/{suggestion_uuid}/reject",
+        json={"fields": ["media_profile"]},
+    )
+    rejected_detail = (await client.get(f"/v1/ingredients/{ingredient_uuid}")).json()["data"]
+
+    assert reject_response.status_code == 200
+    assert rejected_detail["suggested_media_profile"] is None
 
 
 async def test_list_filter_by_name(client):

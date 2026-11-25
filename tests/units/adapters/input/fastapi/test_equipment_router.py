@@ -1,3 +1,5 @@
+from unittest.mock import AsyncMock
+
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -11,6 +13,8 @@ from application.services.equipment_service import EquipmentService
 from application.services.recipe_service import RecipeService
 from domain.models.recipe import Recipe
 from domain.models.recipe_equipment import RecipeEquipment
+from domain.models.generated_image import GeneratedImage
+from domain.ports.output.image_generator import ImageGenerator
 
 
 def _payload(**kwargs) -> dict:
@@ -23,8 +27,24 @@ def equipment_repo():
 
 
 @pytest.fixture
-def service(equipment_repo, logger):
-    return EquipmentService(equipment_repo, logger)
+def image_generator():
+    generator = AsyncMock(spec=ImageGenerator)
+    generator.generate.return_value = GeneratedImage.model_validate({
+        "image": {
+            "bucket": "equipment",
+            "key": "equipment/four/main/image.png",
+            "url": "/api/media/v1/buckets/equipment/objects/equipment/four/main/image.png",
+            "content_type": "image/png",
+            "size_bytes": 42,
+        },
+        "provider": "test",
+    })
+    return generator
+
+
+@pytest.fixture
+def service(equipment_repo, logger, image_generator):
+    return EquipmentService(equipment_repo, logger, image_generator=image_generator)
 
 
 @pytest.fixture
@@ -168,3 +188,34 @@ async def test_merge_duplicates_rejects_target_in_duplicate_list(client):
     )
 
     assert response.status_code == 409
+
+
+async def test_generate_equipment_image_attaches_media_result(client, image_generator):
+    uuid = (await client.post("/v1/equipment/", json=_payload(name="Fouet"))).json()["data"]["uuid"]
+
+    response = await client.post(
+        f"/v1/equipment/{uuid}/main-image",
+        json={},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["equipment"]["main_image"] == data["image"]["url"]
+    call = image_generator.generate.await_args.kwargs
+    assert "Fouet" in call["brief"]
+    assert call["bucket"] == "equipment"
+    assert call["object_prefix"] == f"equipment/{uuid}/main"
+
+    fetched = await client.get(f"/v1/equipment/{uuid}")
+    assert fetched.json()["data"]["main_image"] == data["image"]["url"]
+
+
+async def test_generate_equipment_image_rejects_free_form_brief(client):
+    uuid = (await client.post("/v1/equipment/", json=_payload(name="Fouet"))).json()["data"]["uuid"]
+
+    response = await client.post(
+        f"/v1/equipment/{uuid}/main-image",
+        json={"brief": "Generate anything"},
+    )
+
+    assert response.status_code == 422

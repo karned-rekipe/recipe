@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from arclith import BaseService, Logger
-from domain.models.ingredient import EnrichmentProfile, Ingredient
+from domain.models.ingredient import EnrichmentProfile, Ingredient, MediaProfile
 from domain.models.ingredient_enrichment_suggestion import IngredientEnrichmentSuggestion
 from domain.ports.output.ingredient_enrichment_suggestion_repository import IngredientEnrichmentSuggestionRepository
 from domain.ports.output.ingredient_repository import IngredientRepository
@@ -46,6 +46,31 @@ class IngredientEnrichmentSuggestionService(BaseService[IngredientEnrichmentSugg
 
     async def find_by_ingredient_uuid(self, ingredient_uuid: UUID) -> list[IngredientEnrichmentSuggestion]:
         return await self._suggestion_repo.find_by_ingredient_uuid(ingredient_uuid)
+
+    async def find_suggested_media_profiles(
+        self,
+        ingredient_uuids: list[UUID],
+    ) -> dict[str, MediaProfile]:
+        """Return the latest unresolved image suggestion for each ingredient."""
+        suggestions = await self._suggestion_repo.find_active_by_ingredient_uuids(ingredient_uuids)
+        profiles: dict[str, MediaProfile] = {}
+        for suggestion in sorted(suggestions, key=lambda item: str(item.uuid), reverse=True):
+            ingredient_uuid = str(suggestion.ingredient_uuid)
+            if ingredient_uuid in profiles:
+                continue
+            if "media_profile" in suggestion.applied_fields or "media_profile" in suggestion.rejected_fields:
+                continue
+            proposed_profile = suggestion.proposed_patch.get("media_profile")
+            if not isinstance(proposed_profile, dict):
+                continue
+            try:
+                profile = MediaProfile.model_validate(proposed_profile)
+            except ValueError:
+                continue
+            if not profile.main_image_uri or not profile.main_image_uri.strip():
+                continue
+            profiles[ingredient_uuid] = profile.model_copy(update={"validated": False})
+        return profiles
 
     async def apply(
         self,

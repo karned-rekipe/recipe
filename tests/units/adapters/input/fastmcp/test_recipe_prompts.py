@@ -72,6 +72,10 @@ async def test_mcp_help_lists_tools(client):
     assert "create_recipe" in text
     assert "list_recipes" in text
     assert "ai_enrich_recipe" in text
+    assert "list_ingredients" in text
+    assert "complete_ingredient" in text
+    assert "generate_ingredient_image" in text
+    assert "generate_equipment_image" in text
     assert "purge_recipes" in text
 
 

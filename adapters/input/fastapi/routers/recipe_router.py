@@ -167,7 +167,6 @@ class RecipeRouter:
         try:
             recipe, generated = await self._service.generate_main_image(
                 self._to_uuid6(uuid),
-                prompt=payload.prompt,
                 replace_existing=payload.replace_existing,
             )
         except KeyError as exc:

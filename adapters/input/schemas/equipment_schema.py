@@ -1,8 +1,9 @@
 from uuid import UUID as StdUUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from arclith.adapters.input.schemas.base_schema import BaseSchema
+from domain.models.generated_image import GeneratedImage
 
 
 class EquipmentCreateSchema(BaseModel):
@@ -38,6 +39,15 @@ class EquipmentUpdateSchema(EquipmentCreateSchema):
     pass
 
 
+class EquipmentImageGenerationRequestSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    replace_existing: bool = Field(
+        False,
+        description="Allow replacement of an existing main image.",
+    )
+
+
 class EquipmentCreatedSchema(BaseModel):
     uuid: StdUUID = Field(
         description="Unique identifier of the created equipment (UUIDv7).",
@@ -48,3 +58,8 @@ class EquipmentCreatedSchema(BaseModel):
 class EquipmentSchema(BaseSchema):
     name: str = Field(..., description="Equipment name.", examples=["Four"])
     description: str | None = Field(None, description="Optional equipment details.")
+    main_image: str | None = Field(None, description="Public URL of the main image.")
+
+
+class EquipmentImageGenerationResponseSchema(GeneratedImage):
+    equipment: EquipmentSchema

@@ -14,7 +14,7 @@ from domain.ports.output.ingredient_group_repository import IngredientGroupRepos
 from domain.ports.output.ingredient_repository import IngredientRepository
 from domain.ports.output.ingredient_rayon_repository import IngredientRayonRepository
 from domain.ports.output.recipe_repository import RecipeRepository
-from domain.ports.output.recipe_image_generator import RecipeImageGenerator
+from domain.ports.output.image_generator import ImageGenerator
 from domain.ports.output.recipe_ai_enrichment_agent import RecipeAIEnrichmentAgent
 from domain.ports.output.tag_repository import TagRepository
 
@@ -59,7 +59,7 @@ def build_recipe_service(
     tag_repository: TagRepository | None = None,
     group_repository: IngredientGroupRepository | None = None,
     rayon_repository: IngredientRayonRepository | None = None,
-    image_generator: RecipeImageGenerator | None = None,
+    image_generator: ImageGenerator | None = None,
     ai_enrichment_agent: RecipeAIEnrichmentAgent | None = None,
 ) -> tuple[RecipeService, Logger]:
     arclith.logger.info("🗄️ Repository adapter selected", adapter=arclith.config.adapters.repository)

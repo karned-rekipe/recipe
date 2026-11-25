@@ -5,7 +5,7 @@ import fastmcp
 from pydantic import Field
 from uuid6 import UUID
 
-from adapters.input.fastmcp.authorization import DELETE_SCOPE, WRITE_SCOPE, secure_tool
+from adapters.input.fastmcp.authorization import DELETE_SCOPE, IMAGE_GENERATE_SCOPE, WRITE_SCOPE, secure_tool
 from adapters.input.fastmcp.dependencies import inject_tenant_uri
 from adapters.input.schemas.equipment_schema import EquipmentSchema
 from adapters.input.schemas.recipe_schema import RecipeSchema
@@ -76,13 +76,52 @@ class EquipmentMCP:
         ) -> dict:
             """Replace equipment."""
             await inject_tenant_uri(ctx)
+            existing = await service.read(to_uuid6(StdUUID(uuid)))
+            if existing is None:
+                raise KeyError(f"Equipment with uuid {uuid} not found")
             result = await service.update(Equipment(
                 uuid=to_uuid6(StdUUID(uuid)),
                 name=name,
                 description=description,
+                main_image=existing.main_image,
             ))
             logger.info("✅ Equipment updated via MCP", uuid=uuid, name=result.name)
             return EquipmentSchema.model_validate(result).model_dump()
+
+        @secure_tool(self._mcp, IMAGE_GENERATE_SCOPE)
+        async def generate_equipment_image(
+            uuid: Annotated[
+                str,
+                Field(
+                    description="UUID (UUIDv7) of the equipment whose main image must be generated.",
+                    examples=["01951234-5678-7abc-def0-123456789abc"],
+                ),
+            ],
+            replace_existing: Annotated[
+                bool,
+                Field(
+                    default=False,
+                    description="Allow replacement when the equipment already has a main image.",
+                ),
+            ] = False,
+            ctx: fastmcp.Context | None = None,
+        ) -> dict:
+            """Generate, store, and attach an equipment main image through media."""
+            await inject_tenant_uri(ctx)
+            equipment, generated = await service.generate_main_image(
+                to_uuid6(StdUUID(uuid)),
+                replace_existing=replace_existing,
+            )
+            logger.info(
+                "✅ Equipment image generated via MCP",
+                uuid=uuid,
+                provider=generated.provider,
+                image_url=generated.image.url,
+            )
+            return {
+                "equipment": EquipmentSchema.model_validate(equipment).model_dump(mode="json"),
+                **generated.model_dump(mode="json"),
+            }
 
         @secure_tool(self._mcp, DELETE_SCOPE)
         async def delete_equipment(

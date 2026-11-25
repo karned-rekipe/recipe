@@ -14,6 +14,10 @@ class Equipment(Entity):
         description="Optional equipment details.",
         examples=["Robot multifonction, bol 2 L"],
     )
+    main_image: str | None = Field(
+        None,
+        description="Public URL of the generated main image.",
+    )
 
     @field_validator("name", mode="before")
     @classmethod

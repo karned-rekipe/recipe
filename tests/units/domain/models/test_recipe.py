@@ -12,6 +12,13 @@ def test_name_stripped():
     assert i.name == "Sel fin"
 
 
+def test_subtitle_is_optional_and_normalized():
+    recipe = Recipe(name="Tourbillon", subtitle="  Tarte citron meringuée  ")
+
+    assert recipe.subtitle == "Tarte citron meringuée"
+    assert Recipe(name="Tourbillon", subtitle="   ").subtitle is None
+
+
 def test_empty_name_raises():
     with pytest.raises(Exception):
         Recipe(name="")

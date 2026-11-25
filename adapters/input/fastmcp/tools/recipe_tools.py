@@ -195,14 +195,6 @@ class RecipeMCP:
                     examples=["01951234-5678-7abc-def0-123456789abc"],
                 ),
             ],
-            prompt: Annotated[
-                str | None,
-                Field(
-                    default=None,
-                    max_length=4000,
-                    description="Optional image prompt. By default media builds one from the recipe name and ingredients.",
-                ),
-            ] = None,
             replace_existing: Annotated[
                 bool,
                 Field(
@@ -216,7 +208,6 @@ class RecipeMCP:
             await inject_tenant_uri(ctx)
             recipe, generated = await service.generate_main_image(
                 to_uuid6(StdUUID(uuid)),
-                prompt=prompt,
                 replace_existing=replace_existing,
             )
             hydrated = await service.hydrate_recipe(recipe)

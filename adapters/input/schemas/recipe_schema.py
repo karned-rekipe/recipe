@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from arclith.adapters.input.schemas.base_schema import BaseSchema
 from domain.models.country import Country
-from domain.models.generated_recipe_image import GeneratedRecipeImage
+from domain.models.generated_image import GeneratedImage
 from domain.models.meal_category import MealCategory
 from domain.models.recipe import MealType, Recipe, RecipeQualityStatus, RecipeStatus, Source
 from domain.models.recipe_component import RecipeComponent
@@ -175,6 +175,12 @@ class RecipeCreateSchema(BaseModel):
         examples=["Pizza margherita", "Tarte tatin"],
         min_length=1,
     )
+    subtitle: str | None = Field(
+        None,
+        description="Sous-titre editorial optionnel, affiche separement du nom.",
+        max_length=160,
+        examples=["Tarte citron meringuee"],
+    )
     description: str | None = Field(None, description="Description detaillee de la recette.")
     origin_country: Country | None = Field(
         None,
@@ -243,6 +249,7 @@ class RecipeUpdateSchema(RecipeCreateSchema):
 
 class RecipePatchSchema(BaseModel):
     name: str | None = Field(None, description="Nouveau nom. Ignore si absent.", min_length=1)
+    subtitle: str | None = Field(None, description="Nouveau sous-titre editorial.", max_length=160)
     description: str | None = None
     origin_country: Country | None = None
     meal_type: MealType | None = None
@@ -302,11 +309,8 @@ class RecipePatchSchema(BaseModel):
 
 
 class RecipeImageGenerationRequestSchema(BaseModel):
-    prompt: str | None = Field(
-        None,
-        max_length=4000,
-        description="Prompt optionnel. Media en construit un depuis la recette s'il est absent.",
-    )
+    model_config = ConfigDict(extra="forbid")
+
     replace_existing: bool = Field(
         False,
         description="Autorise le remplacement d'une image principale existante.",
@@ -329,6 +333,7 @@ class RecipeCreatedSchema(BaseModel):
 
 class RecipeSchema(BaseSchema):
     name: str = Field(..., description="Nom de la recette.", examples=["Pizza margherita"])
+    subtitle: str | None = Field(None, description="Sous-titre editorial optionnel.")
     description: str | None = None
     origin_country: Country | None = None
     meal_type: MealType | None = None
@@ -392,7 +397,7 @@ class RecipeSchema(BaseSchema):
     )
 
 
-class RecipeImageGenerationResponseSchema(GeneratedRecipeImage):
+class RecipeImageGenerationResponseSchema(GeneratedImage):
     recipe: RecipeSchema
 
 
@@ -410,6 +415,7 @@ def recipe_create_payload_to_domain(payload: RecipeCreateSchema) -> Recipe:
     ingredients = [_to_recipe_ingredient(ingredient) for ingredient in payload.ingredients]
     return Recipe(
         name=payload.name,
+        subtitle=payload.subtitle,
         description=payload.description,
         origin_country=payload.origin_country,
         meal_type=payload.meal_type,
@@ -503,6 +509,7 @@ def _convert_steps(values: dict[str, Any]) -> None:
 
 def _preserve_unspecified_update_values(updates: dict[str, Any], fields_set: set[str]) -> None:
     for field_name in (
+        "subtitle",
         "favorite",
         "quality_status",
         "legacy_id",

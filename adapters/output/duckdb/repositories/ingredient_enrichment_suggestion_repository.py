@@ -25,3 +25,18 @@ class DuckDBIngredientEnrichmentSuggestionRepository(
             [str(ingredient_uuid)],
         )
         return [self._row_to_entity(row) for row in rows]
+
+    async def find_active_by_ingredient_uuids(
+        self,
+        ingredient_uuids: list[UUID],
+    ) -> list[IngredientEnrichmentSuggestion]:
+        if not ingredient_uuids:
+            return []
+        placeholders = ", ".join("?" for _ in ingredient_uuids)
+        rows = self._fetch(
+            f"SELECT * FROM {self._table} "  # nosec B608
+            f"WHERE deleted_at IS NULL AND ingredient_uuid IN ({placeholders}) "
+            "AND status IN ('pending', 'partially_applied')",
+            [str(ingredient_uuid) for ingredient_uuid in ingredient_uuids],
+        )
+        return [self._row_to_entity(row) for row in rows]

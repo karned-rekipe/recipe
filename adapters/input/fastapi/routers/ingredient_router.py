@@ -9,6 +9,8 @@ from adapters.input.schemas.duplicate_schema import DuplicateGroupSchema, Duplic
 from adapters.input.schemas.ingredient_schema import (
     IngredientCreatedSchema,
     IngredientCreateSchema,
+    IngredientImageGenerationResponseSchema,
+    IngredientImageGenerationRequestSchema,
     IngredientPatchSchema,
     IngredientSchema,
     IngredientUnitConversionRequestSchema,
@@ -28,6 +30,7 @@ from application.services.ingredient_enrichment_suggestion_service import (
 )
 from application.services.ingredient_service import (
     IngredientDuplicateMergeError,
+    IngredientImageGenerationUnavailableError,
     IngredientReferenceError,
     IngredientService,
     IngredientUnitConversionError,
@@ -42,7 +45,7 @@ from arclith.adapters.input.schemas.response_wrapper import (
     success_response,
 )
 from arclith.domain.ports.logger import Logger
-from domain.models.ingredient import Ingredient
+from domain.models.ingredient import Ingredient, MediaProfile
 from domain.models.ingredient_enrichment_suggestion import IngredientEnrichmentSuggestion
 
 
@@ -110,6 +113,20 @@ class IngredientRouter:
             responses={
                 404: {"description": "Ingredient not found"},
             },
+        )
+        self.router.add_api_route(
+            methods=["POST"],
+            path="/{uuid}/main-image",
+            endpoint=self.generate_ingredient_image,
+            summary="Generate an ingredient image suggestion",
+            response_model=ApiResponse[IngredientImageGenerationResponseSchema],
+            status_code=201,
+            responses={
+                404: {"description": "Ingredient not found"},
+                502: {"description": "Ingredient image generation failed"},
+                503: {"description": "Ingredient image generation unavailable"},
+            },
+            dependencies=[Depends(require_auth)],
         )
         self.router.add_api_route(
             methods=["PUT"],
@@ -216,6 +233,38 @@ class IngredientRouter:
     def _to_uuid6(uuid: StdUUID) -> UUID:
         return UUID(str(uuid))
 
+    async def generate_ingredient_image(
+        self,
+        uuid: StdUUID,
+        payload: IngredientImageGenerationRequestSchema,
+        duration_ms: Annotated[float, Depends(get_duration_ms)],
+    ) -> ApiResponse[IngredientImageGenerationResponseSchema]:
+        """Generate a constrained image suggestion through the internal agent."""
+        del payload
+        try:
+            result = await self._service.generate_main_image_suggestion(
+                self._to_uuid6(uuid)
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Ingredient not found") from exc
+        except IngredientImageGenerationUnavailableError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+        self._logger.info(
+            "✅ Ingredient image suggestion generated via HTTP",
+            uuid=str(uuid),
+            run_uuid=result.run_uuid,
+            suggestion_uuid=result.suggestion_uuid,
+        )
+        return success_response(
+            IngredientImageGenerationResponseSchema.model_validate(
+                result.model_dump(mode="python")
+            ),
+            metadata=ResponseMetadata(duration_ms=int(duration_ms)),
+        )
+
     async def create_ingredient(
         self,
         payload: IngredientCreateSchema,
@@ -281,8 +330,14 @@ class IngredientRouter:
         base = f"{request.url.path.rstrip('/')}"
         response.headers["Link"] = f'<{base}>; rel="self", <{base}/duplicate>; rel="duplicate", </v1/ingredients>; rel="collection"'
 
+        suggested_media_profiles = await self._find_suggested_media_profiles([result])
         return success_response(
-            IngredientSchema.model_validate(await self._service.hydrate_ingredient(result)),
+            IngredientSchema.model_validate(
+                await self._service.hydrate_ingredient(
+                    result,
+                    suggested_media_profiles.get(str(result.uuid)),
+                )
+            ),
             metadata=ResponseMetadata(duration_ms=int(duration_ms)),
         )
 
@@ -478,8 +533,12 @@ class IngredientRouter:
 
         response.headers["X-Total-Count"] = str(total)
 
+        suggested_media_profiles = await self._find_suggested_media_profiles(items)
         return paginated_response(
-            data=[IngredientSchema.model_validate(item) for item in await self._service.hydrate_ingredients(items)],
+            data=[
+                IngredientSchema.model_validate(item)
+                for item in await self._service.hydrate_ingredients(items, suggested_media_profiles)
+            ],
             total=total,
             page=page,
             per_page=per_page,
@@ -576,6 +635,22 @@ class IngredientRouter:
         return success_response(
             [IngredientEnrichmentSuggestionSchema.model_validate(item) for item in suggestions],
             metadata=ResponseMetadata(duration_ms=int(duration_ms)),
+        )
+
+    async def _find_suggested_media_profiles(
+        self,
+        ingredients: list[Ingredient],
+    ) -> dict[str, MediaProfile]:
+        ingredients_without_image = [
+            ingredient
+            for ingredient in ingredients
+            if not ingredient.media_profile.main_image_uri
+            or not ingredient.media_profile.main_image_uri.strip()
+        ]
+        if self._suggestion_service is None or not ingredients_without_image:
+            return {}
+        return await self._suggestion_service.find_suggested_media_profiles(
+            [ingredient.uuid for ingredient in ingredients_without_image]
         )
 
     async def create_enrichment_suggestion(

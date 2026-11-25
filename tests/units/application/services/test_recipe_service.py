@@ -13,14 +13,14 @@ from application.services.recipe_service import (
     RecipeAIEnrichmentUnavailableError,
     RecipeService,
 )
-from domain.models.generated_recipe_image import GeneratedRecipeImage
+from domain.models.generated_image import GeneratedImage
 from domain.models.recipe_ai_enrichment import RecipeAIEnrichment
 from domain.models.recipe import Recipe
 from domain.models.recipe_component import RecipeComponent
 from domain.models.recipe_ingredient import RecipeIngredient
 from domain.models.recipe_line_origin import RecipeLineOrigin
 from domain.models.step import Step
-from domain.ports.output.recipe_image_generator import RecipeImageGenerator
+from domain.ports.output.image_generator import ImageGenerator
 from domain.ports.output.recipe_ai_enrichment_agent import RecipeAIEnrichmentAgent
 
 
@@ -111,7 +111,7 @@ async def test_enrich_with_ai_delegates_to_internal_agent(repo, logger):
 
 
 async def test_generate_main_image_refuses_implicit_replacement(repo, logger):
-    generator = AsyncMock(spec=RecipeImageGenerator)
+    generator = AsyncMock(spec=ImageGenerator)
     service = RecipeService(repo, logger, image_generator=generator)
     recipe = await service.create(Recipe(name="Soupe", main_image="/existing.png"))
 
@@ -122,8 +122,8 @@ async def test_generate_main_image_refuses_implicit_replacement(repo, logger):
 
 
 async def test_generate_main_image_persists_generated_url(repo, logger):
-    generator = AsyncMock(spec=RecipeImageGenerator)
-    generator.generate.return_value = GeneratedRecipeImage.model_validate({
+    generator = AsyncMock(spec=ImageGenerator)
+    generator.generate.return_value = GeneratedImage.model_validate({
         "image": {
             "bucket": "recipes",
             "key": "recipes/soupe.png",
@@ -145,7 +145,7 @@ async def test_generate_main_image_persists_generated_url(repo, logger):
 async def test_generate_main_image_reserves_recipe_against_duplicate_requests(repo, logger):
     started = asyncio.Event()
     finish = asyncio.Event()
-    generated = GeneratedRecipeImage.model_validate({
+    generated = GeneratedImage.model_validate({
         "image": {
             "bucket": "recipes",
             "key": "recipes/soupe.png",
@@ -161,7 +161,7 @@ async def test_generate_main_image_reserves_recipe_against_duplicate_requests(re
         await finish.wait()
         return generated
 
-    generator = AsyncMock(spec=RecipeImageGenerator)
+    generator = AsyncMock(spec=ImageGenerator)
     generator.generate.side_effect = generate_once
     service = RecipeService(repo, logger, image_generator=generator)
     recipe = await service.create(Recipe(name="Soupe"))
@@ -179,7 +179,7 @@ async def test_generate_main_image_reserves_recipe_against_duplicate_requests(re
 async def test_generate_main_image_preserves_concurrent_recipe_edits(repo, logger):
     started = asyncio.Event()
     finish = asyncio.Event()
-    generated = GeneratedRecipeImage.model_validate({
+    generated = GeneratedImage.model_validate({
         "image": {
             "bucket": "recipes",
             "key": "recipes/soupe.png",
@@ -195,7 +195,7 @@ async def test_generate_main_image_preserves_concurrent_recipe_edits(repo, logge
         await finish.wait()
         return generated
 
-    generator = AsyncMock(spec=RecipeImageGenerator)
+    generator = AsyncMock(spec=ImageGenerator)
     generator.generate.side_effect = generate_after_edit
     service = RecipeService(repo, logger, image_generator=generator)
     recipe = await service.create(Recipe(name="Soupe"))

@@ -1,8 +1,15 @@
 import pytest
+from unittest.mock import AsyncMock
 
 from adapters.output.memory.repositories.ingredient_repository import InMemoryIngredientRepository
-from application.services.ingredient_service import IngredientService
+from application.services.ingredient_service import (
+    IngredientImageGenerationUnavailableError,
+    IngredientService,
+)
 from domain.models.ingredient import Ingredient
+from domain.models.ingredient_ai_enrichment import IngredientAIEnrichment
+from domain.models.ingredient_image_generation import IngredientImageGeneration
+from domain.ports.output.ingredient_image_generation_agent import IngredientImageGenerationAgent
 
 GROUP_UUID = "01951234-5678-7abc-def0-000000000201"
 RAYON_UUID = "01951234-5678-7abc-def0-000000000202"
@@ -107,3 +114,88 @@ async def test_list_units_contains_shopping_purchase_units(service):
     codes = {unit["code"] for unit in units}
 
     assert {"paquet", "boite", "bouteille", "barquette"}.issubset(codes)
+
+
+async def test_generate_main_image_suggestion_uses_internal_agent(ingredient_repo, logger):
+    agent = AsyncMock(spec=IngredientImageGenerationAgent)
+    service = IngredientService(
+        ingredient_repo,
+        logger,
+        image_generation_agent=agent,
+    )
+    ingredient = await service.create(Ingredient(name="Carotte"))
+    agent.generate.return_value = IngredientImageGeneration(
+        run_uuid="01951234-5678-7abc-def0-000000000301",
+        ingredient_uuid=str(ingredient.uuid),
+        suggestion_uuid="01951234-5678-7abc-def0-000000000302",
+        status="success",
+        completeness_score=25,
+        missing_fields=["media_profile"],
+        proposed_fields=["media_profile"],
+    )
+
+    result = await service.generate_main_image_suggestion(ingredient.uuid)
+
+    assert result.suggestion_uuid == "01951234-5678-7abc-def0-000000000302"
+    agent.generate.assert_awaited_once_with(ingredient_uuid=str(ingredient.uuid))
+
+
+async def test_generate_main_image_suggestion_requires_configured_agent(
+    ingredient_repo,
+    logger,
+):
+    service = IngredientService(ingredient_repo, logger)
+    ingredient = await service.create(Ingredient(name="Carotte"))
+
+    with pytest.raises(IngredientImageGenerationUnavailableError):
+        await service.generate_main_image_suggestion(ingredient.uuid)
+
+
+async def test_complete_with_ai_uses_internal_agent(ingredient_repo, logger):
+    agent = AsyncMock(spec=IngredientImageGenerationAgent)
+    service = IngredientService(
+        ingredient_repo,
+        logger,
+        enrichment_agent=agent,
+    )
+    ingredient = await service.create(Ingredient(name="Carotte"))
+    agent.complete.return_value = IngredientAIEnrichment(
+        run_uuid="01951234-5678-7abc-def0-000000000311",
+        ingredient_uuid=str(ingredient.uuid),
+        suggestion_uuid="01951234-5678-7abc-def0-000000000312",
+        status="success",
+        completeness_score=25,
+        missing_fields=["media_profile", "nutrition_profile"],
+        proposed_fields=["media_profile", "nutrition_profile"],
+        image_generated=True,
+    )
+
+    result = await service.complete_with_ai(ingredient.uuid)
+
+    assert result.image_generated is True
+    agent.complete.assert_awaited_once_with(ingredient_uuid=str(ingredient.uuid))
+
+
+async def test_generate_main_image_suggestion_rejects_mismatched_result(
+    ingredient_repo,
+    logger,
+):
+    agent = AsyncMock(spec=IngredientImageGenerationAgent)
+    service = IngredientService(
+        ingredient_repo,
+        logger,
+        image_generation_agent=agent,
+    )
+    ingredient = await service.create(Ingredient(name="Carotte"))
+    agent.generate.return_value = IngredientImageGeneration(
+        run_uuid="01951234-5678-7abc-def0-000000000301",
+        ingredient_uuid="01951234-5678-7abc-def0-000000000399",
+        suggestion_uuid="01951234-5678-7abc-def0-000000000302",
+        status="success",
+        completeness_score=25,
+        missing_fields=["media_profile"],
+        proposed_fields=["media_profile"],
+    )
+
+    with pytest.raises(RuntimeError, match="another ingredient"):
+        await service.generate_main_image_suggestion(ingredient.uuid)
