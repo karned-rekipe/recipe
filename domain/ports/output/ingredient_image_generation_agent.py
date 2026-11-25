@@ -1,9 +1,4 @@
-from abc import ABC, abstractmethod
+from domain.ports.output.ingredient_enrichment_agent import IngredientEnrichmentAgent
 
-from domain.models.ingredient_image_generation import IngredientImageGeneration
-
-
-class IngredientImageGenerationAgent(ABC):
-    @abstractmethod
-    async def generate(self, *, ingredient_uuid: str) -> IngredientImageGeneration:
-        """Generate one reviewable ingredient image suggestion through the internal agent."""
+# Backward-compatible import for integrations that still use the former port name.
+IngredientImageGenerationAgent = IngredientEnrichmentAgent

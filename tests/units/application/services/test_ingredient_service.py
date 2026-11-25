@@ -7,6 +7,7 @@ from application.services.ingredient_service import (
     IngredientService,
 )
 from domain.models.ingredient import Ingredient
+from domain.models.ingredient_ai_enrichment import IngredientAIEnrichment
 from domain.models.ingredient_image_generation import IngredientImageGeneration
 from domain.ports.output.ingredient_image_generation_agent import IngredientImageGenerationAgent
 
@@ -148,6 +149,31 @@ async def test_generate_main_image_suggestion_requires_configured_agent(
 
     with pytest.raises(IngredientImageGenerationUnavailableError):
         await service.generate_main_image_suggestion(ingredient.uuid)
+
+
+async def test_complete_with_ai_uses_internal_agent(ingredient_repo, logger):
+    agent = AsyncMock(spec=IngredientImageGenerationAgent)
+    service = IngredientService(
+        ingredient_repo,
+        logger,
+        enrichment_agent=agent,
+    )
+    ingredient = await service.create(Ingredient(name="Carotte"))
+    agent.complete.return_value = IngredientAIEnrichment(
+        run_uuid="01951234-5678-7abc-def0-000000000311",
+        ingredient_uuid=str(ingredient.uuid),
+        suggestion_uuid="01951234-5678-7abc-def0-000000000312",
+        status="success",
+        completeness_score=25,
+        missing_fields=["media_profile", "nutrition_profile"],
+        proposed_fields=["media_profile", "nutrition_profile"],
+        image_generated=True,
+    )
+
+    result = await service.complete_with_ai(ingredient.uuid)
+
+    assert result.image_generated is True
+    agent.complete.assert_awaited_once_with(ingredient_uuid=str(ingredient.uuid))
 
 
 async def test_generate_main_image_suggestion_rejects_mismatched_result(

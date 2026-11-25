@@ -14,7 +14,7 @@ from infrastructure.containers.equipment_container import build_equipment_servic
 from infrastructure.containers.ingredient_group_container import build_ingredient_group_service
 from infrastructure.containers.ingredient_container import build_ingredient_service
 from infrastructure.containers.ingredient_enrichment_suggestion_container import build_ingredient_enrichment_suggestion_service
-from infrastructure.containers.ingredient_image_generation_agent_container import build_ingredient_image_generation_agent
+from infrastructure.containers.ingredient_enrichment_agent_container import build_ingredient_enrichment_agent
 from infrastructure.containers.ingredient_rayon_container import build_ingredient_rayon_service
 from infrastructure.containers.image_generator_container import build_image_generator
 from infrastructure.containers.recipe_container import build_recipe_service
@@ -31,7 +31,7 @@ def register_routers(app: FastAPI, arclith: Arclith) -> None:
         arclith,
         group_repository=group_service.repository,
         rayon_repository=rayon_service.repository,
-        image_generation_agent=build_ingredient_image_generation_agent(),
+        enrichment_agent=build_ingredient_enrichment_agent(),
     )
     equipment_service, equipment_logger = build_equipment_service(arclith, image_generator=image_generator)
     tag_service, tag_logger = build_tag_service(arclith)

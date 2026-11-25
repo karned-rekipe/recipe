@@ -72,6 +72,8 @@ class RecipePrompts:
                 "has_main_image=false to find recipes that need an image\n"
                 "- duplicate_recipe(uuid) — clone with a new UUID\n"
                 "- generate_recipe_image(uuid) — generate and attach the main image\n"
+                "- list_ingredients(name) — list active ingredients with an optional name filter\n"
+                "- complete_ingredient(uuid) — complete missing data and propose an image only when absent\n"
                 "- generate_ingredient_image(uuid) — generate a reviewable ingredient image suggestion\n"
                 "- generate_equipment_image(uuid) — generate and attach an equipment image\n"
                 "- ai_enrich_recipe(uuid, generate_image) — enrich and reorganize an existing recipe via the internal AI agent\n"

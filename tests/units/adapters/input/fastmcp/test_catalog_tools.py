@@ -19,6 +19,7 @@ from application.services.ingredient_rayon_service import IngredientRayonService
 from application.services.ingredient_service import IngredientService
 from application.services.tag_service import TagService
 from domain.models.generated_image import GeneratedImage
+from domain.models.ingredient_ai_enrichment import IngredientAIEnrichment
 from domain.models.ingredient_image_generation import IngredientImageGeneration
 from domain.ports.output.ingredient_image_generation_agent import IngredientImageGenerationAgent
 from domain.ports.output.image_generator import ImageGenerator
@@ -81,6 +82,20 @@ def ingredient_image_agent():
         )
 
     agent.generate.side_effect = generate
+
+    async def complete(*, ingredient_uuid: str):
+        return IngredientAIEnrichment(
+            run_uuid="completion-run-1",
+            ingredient_uuid=ingredient_uuid,
+            suggestion_uuid="completion-suggestion-1",
+            status="success",
+            completeness_score=25,
+            missing_fields=["media_profile", "nutrition_profile"],
+            proposed_fields=["media_profile", "nutrition_profile"],
+            image_generated=True,
+        )
+
+    agent.complete.side_effect = complete
     return agent
 
 
@@ -310,3 +325,19 @@ async def test_ingredient_mcp_generates_reviewable_image_suggestion(client) -> N
     assert result["ingredient_uuid"] == created["uuid"]
     assert result["suggestion_uuid"] == "suggestion-1"
     assert result["proposed_fields"] == ["media_profile"]
+
+
+async def test_ingredient_mcp_completes_data_and_missing_image(client) -> None:
+    created = _data(await client.call_tool("create_ingredient", {"name": "Carotte"}))
+
+    result = _data(
+        await client.call_tool(
+            "complete_ingredient",
+            {"uuid": created["uuid"]},
+        )
+    )
+
+    assert result["ingredient_uuid"] == created["uuid"]
+    assert result["suggestion_uuid"] == "completion-suggestion-1"
+    assert result["image_generated"] is True
+    assert result["proposed_fields"] == ["media_profile", "nutrition_profile"]

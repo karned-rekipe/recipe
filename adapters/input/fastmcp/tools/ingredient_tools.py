@@ -190,6 +190,29 @@ class IngredientMCP:
             await inject_tenant_uri(ctx)
             return await service.list_units()
 
+        @secure_tool(self._mcp, WRITE_SCOPE, IMAGE_GENERATE_SCOPE)
+        async def complete_ingredient(
+                uuid: Annotated[
+                    str,
+                    Field(
+                        description="UUID (UUIDv7) of the ingredient to complete with AI.",
+                        examples=["01951234-5678-7abc-def0-123456789abc"],
+                    ),
+                ],
+                ctx: fastmcp.Context | None = None,
+        ) -> dict:
+            """Complete missing ingredient data and propose an image only when none exists."""
+            await inject_tenant_uri(ctx)
+            result = await service.complete_with_ai(to_uuid6(StdUUID(uuid)))
+            logger.info(
+                "✅ Ingredient completed via MCP",
+                uuid=uuid,
+                run_uuid=result.run_uuid,
+                suggestion_uuid=result.suggestion_uuid,
+                image_generated=result.image_generated,
+            )
+            return result.model_dump(mode="json")
+
         @secure_tool(self._mcp, IMAGE_GENERATE_SCOPE)
         async def generate_ingredient_image(
                 uuid: Annotated[

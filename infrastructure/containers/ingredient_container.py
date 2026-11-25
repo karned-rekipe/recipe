@@ -10,6 +10,7 @@ from arclith.domain.ports.repository import Repository
 from arclith.infrastructure.config import AppConfig
 from domain.models.ingredient import Ingredient
 from domain.ports.output.ingredient_group_repository import IngredientGroupRepository
+from domain.ports.output.ingredient_enrichment_agent import IngredientEnrichmentAgent
 from domain.ports.output.ingredient_image_generation_agent import IngredientImageGenerationAgent
 from domain.ports.output.ingredient_repository import IngredientRepository
 from domain.ports.output.ingredient_rayon_repository import IngredientRayonRepository
@@ -52,6 +53,7 @@ def build_ingredient_service(
     arclith: Arclith,
     group_repository: IngredientGroupRepository | None = None,
     rayon_repository: IngredientRayonRepository | None = None,
+    enrichment_agent: IngredientEnrichmentAgent | None = None,
     image_generation_agent: IngredientImageGenerationAgent | None = None,
 ) -> tuple[IngredientService, Logger]:
     arclith.logger.info("🗄️ Ingredient repository adapter selected", adapter=arclith.config.adapters.repository)
@@ -62,5 +64,6 @@ def build_ingredient_service(
         arclith.config.soft_delete.retention_days,
         group_repository=group_repository,
         rayon_repository=rayon_repository,
+        enrichment_agent=enrichment_agent,
         image_generation_agent=image_generation_agent,
     ), arclith.logger

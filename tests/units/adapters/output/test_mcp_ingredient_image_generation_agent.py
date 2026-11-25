@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from adapters.output.ingredient_agent import MCPIngredientImageGenerationAgent
+from adapters.output.ingredient_agent import MCPIngredientEnrichmentAgent
 
 
 async def test_agent_calls_internal_mcp_tool(monkeypatch):
@@ -39,10 +39,10 @@ async def test_agent_calls_internal_mcp_tool(monkeypatch):
             )
 
     monkeypatch.setattr(
-        "adapters.output.ingredient_agent.mcp_ingredient_image_generation_agent.fastmcp.Client",
+        "adapters.output.ingredient_agent.mcp_ingredient_enrichment_agent.fastmcp.Client",
         _Client,
     )
-    agent = MCPIngredientImageGenerationAgent(
+    agent = MCPIngredientEnrichmentAgent(
         "http://ingredient-agent:8034/mcp",
         timeout_seconds=42,
         tenant_uri="foyer-demo",
@@ -88,10 +88,10 @@ async def test_agent_rejects_non_image_result(monkeypatch):
             )
 
     monkeypatch.setattr(
-        "adapters.output.ingredient_agent.mcp_ingredient_image_generation_agent.fastmcp.Client",
+        "adapters.output.ingredient_agent.mcp_ingredient_enrichment_agent.fastmcp.Client",
         _Client,
     )
-    agent = MCPIngredientImageGenerationAgent("http://ingredient-agent:8034/mcp")
+    agent = MCPIngredientEnrichmentAgent("http://ingredient-agent:8034/mcp")
 
     with pytest.raises(RuntimeError, match="invalid result"):
         await agent.generate(ingredient_uuid="ingredient-1")
@@ -99,4 +99,48 @@ async def test_agent_rejects_non_image_result(monkeypatch):
 
 def test_agent_rejects_non_http_url():
     with pytest.raises(ValueError, match="http or https"):
-        MCPIngredientImageGenerationAgent("file:///tmp/agent.sock")
+        MCPIngredientEnrichmentAgent("file:///tmp/agent.sock")
+
+
+async def test_agent_calls_internal_completion_tool(monkeypatch):
+    captured: dict = {}
+
+    class _Client:
+        def __init__(self, transport, *, timeout):
+            captured["url"] = transport.url
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def call_tool(self, name, args, *, timeout):
+            captured.update(name=name, args=args)
+            return SimpleNamespace(
+                data={
+                    "run_uuid": "run-2",
+                    "ingredient_uuid": "ingredient-1",
+                    "suggestion_uuid": "suggestion-2",
+                    "status": "success",
+                    "completeness_score": 25,
+                    "missing_fields": ["media_profile", "nutrition_profile"],
+                    "proposed_fields": ["media_profile", "nutrition_profile"],
+                    "image_generated": True,
+                    "warnings": [],
+                },
+                content=[],
+                structured_content=None,
+            )
+
+    monkeypatch.setattr(
+        "adapters.output.ingredient_agent.mcp_ingredient_enrichment_agent.fastmcp.Client",
+        _Client,
+    )
+    agent = MCPIngredientEnrichmentAgent("http://ingredient-agent:8034/mcp")
+
+    result = await agent.complete(ingredient_uuid="ingredient-1")
+
+    assert result.image_generated is True
+    assert captured["name"] == "enrich_ingredient"
+    assert captured["args"] == {"ingredient_uuid": "ingredient-1"}
