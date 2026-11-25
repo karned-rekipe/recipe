@@ -7,6 +7,8 @@ from uuid6 import UUID
 from adapters.input.fastapi.dependencies import inject_tenant_uri, require_auth
 from adapters.input.schemas.duplicate_schema import DuplicateGroupSchema, DuplicateMergeResultSchema, DuplicateMergeSchema
 from adapters.input.schemas.ingredient_schema import (
+    IngredientAIEnrichmentRequestSchema,
+    IngredientAIEnrichmentResponseSchema,
     IngredientCreatedSchema,
     IngredientCreateSchema,
     IngredientImageGenerationResponseSchema,
@@ -29,6 +31,7 @@ from application.services.ingredient_enrichment_suggestion_service import (
     IngredientEnrichmentSuggestionService,
 )
 from application.services.ingredient_service import (
+    IngredientAIEnrichmentUnavailableError,
     IngredientDuplicateMergeError,
     IngredientImageGenerationUnavailableError,
     IngredientReferenceError,
@@ -125,6 +128,20 @@ class IngredientRouter:
                 404: {"description": "Ingredient not found"},
                 502: {"description": "Ingredient image generation failed"},
                 503: {"description": "Ingredient image generation unavailable"},
+            },
+            dependencies=[Depends(require_auth)],
+        )
+        self.router.add_api_route(
+            methods=["POST"],
+            path="/{uuid}/ai-enrich",
+            endpoint=self.complete_ingredient_with_ai,
+            summary="Complete an ingredient through the internal AI agent",
+            response_model=ApiResponse[IngredientAIEnrichmentResponseSchema],
+            status_code=200,
+            responses={
+                404: {"description": "Ingredient not found"},
+                502: {"description": "Ingredient completion failed"},
+                503: {"description": "Ingredient completion unavailable"},
             },
             dependencies=[Depends(require_auth)],
         )
@@ -260,6 +277,37 @@ class IngredientRouter:
         )
         return success_response(
             IngredientImageGenerationResponseSchema.model_validate(
+                result.model_dump(mode="python")
+            ),
+            metadata=ResponseMetadata(duration_ms=int(duration_ms)),
+        )
+
+    async def complete_ingredient_with_ai(
+        self,
+        uuid: StdUUID,
+        payload: IngredientAIEnrichmentRequestSchema,
+        duration_ms: Annotated[float, Depends(get_duration_ms)],
+    ) -> ApiResponse[IngredientAIEnrichmentResponseSchema]:
+        """Complete one ingredient through the Recipe-owned facade."""
+        del payload
+        try:
+            result = await self._service.complete_with_ai(self._to_uuid6(uuid))
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Ingredient not found") from exc
+        except IngredientAIEnrichmentUnavailableError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+        self._logger.info(
+            "Ingredient completed through internal AI agent via HTTP",
+            uuid=str(uuid),
+            run_uuid=result.run_uuid,
+            suggestion_uuid=result.suggestion_uuid,
+            image_generated=result.image_generated,
+        )
+        return success_response(
+            IngredientAIEnrichmentResponseSchema.model_validate(
                 result.model_dump(mode="python")
             ),
             metadata=ResponseMetadata(duration_ms=int(duration_ms)),

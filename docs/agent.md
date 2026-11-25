@@ -188,11 +188,27 @@ En développement local, l'adapter transmet aussi le tenant configuré par
 `REKIPE_TENANT_URI` dans `X-Tenant-URI`. Les deux API conservent ainsi leur
 propre résolution multitenant sans partager de coordonnées MongoDB.
 
-L'agent construit le brief, appelle le contrat générique de `media` et crée une
-suggestion limitée à `media_profile`. Contrairement aux recettes et
-équipements, l'image n'est pas appliquée automatiquement : elle reste soumise
-à validation humaine. Le navigateur et les clients IA ne contactent jamais
-directement l'agent d'enrichissement pour cette opération.
+L'agent construit le brief, appelle le contrat générique de `media`, crée une
+suggestion limitée à `media_profile`, puis l'applique sans écraser une image
+validée. Le navigateur et les clients IA ne contactent jamais directement
+l'agent d'enrichissement pour cette opération.
+
+## Compléter un ingrédient
+
+La complétion unitaire passe elle aussi par la façade publique de `recipe` :
+
+```http
+POST /v1/ingredients/{uuid}/ai-enrich
+Content-Type: application/json
+
+{}
+```
+
+Le tool MCP public équivalent est `complete_ingredient(uuid)`. L'agent remplit
+uniquement les profils manquants et génère une image seulement si la fiche n'en
+possède pas. La suggestion est conservée pour la traçabilité puis appliquée via
+`recipe`. Une répétition de l'appel d'application sur une suggestion déjà
+appliquée est idempotente et renvoie la suggestion existante.
 
 Les lectures REST et MCP d'un ingrédient exposent aussi
 `suggested_media_profile` lorsque la dernière suggestion image n'est ni

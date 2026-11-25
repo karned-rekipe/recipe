@@ -53,7 +53,7 @@ spec:
     openapi: 3.1.0
     info:
       title: Rekipe Recipe REST API
-      version: 0.4.0
+      version: 0.5.1
     servers:
       - url: https://rekipe.amazone.lan/api/recipe
         description: Préproduction privée
@@ -84,6 +84,11 @@ spec:
           summary: Enrichir une recette via l'agent IA interne
           parameters: [{name: uuid, in: path, required: true, schema: {type: string, format: uuid}}]
           responses: {"200": {description: Recette enrichie}, "502": {description: Agent indisponible}}
+      /v1/ingredients/{uuid}/ai-enrich:
+        post:
+          summary: Compléter un ingrédient via l'agent IA interne
+          parameters: [{name: uuid, in: path, required: true, schema: {type: string, format: uuid}}]
+          responses: {"200": {description: Complétion appliquée}, "502": {description: Agent indisponible}}
 ---
 apiVersion: backstage.io/v1alpha1
 kind: API
