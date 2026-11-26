@@ -35,6 +35,7 @@ from arclith.adapters.input.schemas.response_wrapper import (
 )
 from arclith.domain.ports.logger import Logger
 from domain.models.equipment import Equipment
+from domain.ports.output.image_generator import ImageGenerationRateLimitError
 
 
 class EquipmentRouter:
@@ -100,6 +101,7 @@ class EquipmentRouter:
             responses={
                 404: {"description": "Equipment not found"},
                 409: {"description": "Equipment already has a main image"},
+                429: {"description": "Image generation quota or rate limit reached"},
                 502: {"description": "Media image generation failed"},
                 503: {"description": "Image generation is not configured"},
             },
@@ -233,6 +235,8 @@ class EquipmentRouter:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except EquipmentImageGenerationUnavailableError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except ImageGenerationRateLimitError as exc:
+            raise HTTPException(status_code=429, detail=str(exc)) from exc
         except RuntimeError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
