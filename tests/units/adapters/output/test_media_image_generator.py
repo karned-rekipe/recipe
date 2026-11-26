@@ -1,9 +1,12 @@
 import json
+from io import BytesIO
+from urllib.error import HTTPError
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from adapters.output.media import MediaImageGenerator
+from domain.ports.output.image_generator import ImageGenerationRateLimitError
 
 
 def _response_payload() -> dict:
@@ -63,6 +66,30 @@ async def test_rejects_invalid_media_payload():
         return_value=response,
     ):
         with pytest.raises(RuntimeError, match="invalid image payload"):
+            await generator.generate(
+                brief="Brief valide",
+                bucket="equipment",
+                object_prefix="equipment/equipment-1/main",
+            )
+
+
+async def test_propagates_media_rate_limit_detail():
+    generator = MediaImageGenerator("http://media.test")
+    media_error = HTTPError(
+        "http://media.test/v1/images/generate",
+        429,
+        "Too Many Requests",
+        hdrs=None,
+        fp=BytesIO(
+            b'{"detail":"Les credits OpenAI de generation d images sont epuises."}'
+        ),
+    )
+
+    with patch(
+        "adapters.output.media.image_generator.urlopen",
+        side_effect=media_error,
+    ):
+        with pytest.raises(ImageGenerationRateLimitError, match="credits OpenAI"):
             await generator.generate(
                 brief="Brief valide",
                 bucket="equipment",

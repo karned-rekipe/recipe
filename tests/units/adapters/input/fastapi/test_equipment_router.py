@@ -14,7 +14,7 @@ from application.services.recipe_service import RecipeService
 from domain.models.recipe import Recipe
 from domain.models.recipe_equipment import RecipeEquipment
 from domain.models.generated_image import GeneratedImage
-from domain.ports.output.image_generator import ImageGenerator
+from domain.ports.output.image_generator import ImageGenerationRateLimitError, ImageGenerator
 
 
 def _payload(**kwargs) -> dict:
@@ -219,3 +219,13 @@ async def test_generate_equipment_image_rejects_free_form_brief(client):
     )
 
     assert response.status_code == 422
+
+
+async def test_generate_equipment_image_preserves_image_generation_rate_limit(client, image_generator):
+    image_generator.generate.side_effect = ImageGenerationRateLimitError("Les credits OpenAI sont epuises.")
+    uuid = (await client.post("/v1/equipment/", json=_payload(name="Fouet"))).json()["data"]["uuid"]
+
+    response = await client.post(f"/v1/equipment/{uuid}/main-image", json={})
+
+    assert response.status_code == 429
+    assert response.json()["detail"] == "Les credits OpenAI sont epuises."

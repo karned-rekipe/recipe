@@ -13,7 +13,7 @@ from domain.models.equipment import Equipment
 from domain.models.generated_image import GeneratedImage
 from domain.models.recipe_ai_enrichment import RecipeAIEnrichment
 from domain.models.ingredient import Ingredient
-from domain.ports.output.image_generator import ImageGenerator
+from domain.ports.output.image_generator import ImageGenerationRateLimitError, ImageGenerator
 from domain.ports.output.recipe_ai_enrichment_agent import RecipeAIEnrichmentAgent
 from infrastructure.purge_registry import PurgeRegistry
 from uuid6 import UUID
@@ -196,6 +196,17 @@ async def test_generate_recipe_image_maps_media_failure(client, image_generator)
     response = await client.post(f"/v1/recipes/{uuid}/main-image", json={})
 
     assert response.status_code == 502
+
+
+async def test_generate_recipe_image_preserves_image_generation_rate_limit(client, image_generator):
+    image_generator.generate.side_effect = ImageGenerationRateLimitError("Les credits OpenAI sont epuises.")
+    created = await client.post("/v1/recipes/", json=_complete_payload(main_image=None))
+    uuid = created.json()["data"]["uuid"]
+
+    response = await client.post(f"/v1/recipes/{uuid}/main-image", json={})
+
+    assert response.status_code == 429
+    assert response.json()["detail"] == "Les credits OpenAI sont epuises."
 
 
 async def test_enrich_recipe_with_ai_uses_internal_agent(client, ai_enrichment_agent):

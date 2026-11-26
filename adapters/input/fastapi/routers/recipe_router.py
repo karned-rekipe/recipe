@@ -40,6 +40,7 @@ from arclith.adapters.input.schemas.response_wrapper import (
     success_response,
 )
 from arclith.domain.ports.logger import Logger
+from domain.ports.output.image_generator import ImageGenerationRateLimitError
 
 class RecipeRouter:
     def __init__(self, service: RecipeService, logger: Logger) -> None:
@@ -79,6 +80,7 @@ class RecipeRouter:
             responses={
                 404: {"description": "Recipe not found"},
                 409: {"description": "Recipe already has a main image"},
+                429: {"description": "Image generation quota or rate limit reached"},
                 502: {"description": "Media image generation failed"},
                 503: {"description": "Image generation is not configured"},
             },
@@ -179,6 +181,8 @@ class RecipeRouter:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except RecipeImageGenerationUnavailableError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except ImageGenerationRateLimitError as exc:
+            raise HTTPException(status_code=429, detail=str(exc)) from exc
         except RuntimeError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
