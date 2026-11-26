@@ -53,7 +53,7 @@ spec:
     openapi: 3.1.0
     info:
       title: Rekipe Recipe REST API
-      version: 0.5.1
+      version: 0.5.2
     servers:
       - url: https://rekipe.amazone.lan/api/recipe
         description: Préproduction privée
